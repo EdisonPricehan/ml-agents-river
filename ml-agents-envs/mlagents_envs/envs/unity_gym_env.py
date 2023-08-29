@@ -1,4 +1,5 @@
 import itertools
+import torch
 
 import numpy as np
 from typing import Any, Dict, List, Optional, Tuple, Union
@@ -9,6 +10,13 @@ from gym import error, spaces
 from mlagents_envs.base_env import ActionTuple, BaseEnv
 from mlagents_envs.base_env import DecisionSteps, TerminalSteps
 from mlagents_envs import logging_util
+
+import sys
+sys.path.append("/home/edison/Research/Mutual_Imitaion_Reinforcement_Learning")
+sys.path.append("/home/edison/Research/Mutual_Imitaion_Reinforcement_Learning/encoder")
+sys.path.append("/home/edison/Research/Mutual_Imitaion_Reinforcement_Learning/utils")
+from vae import VAE
+from dataset import InputChannelConfig
 
 
 class UnityGymException(error.Error):
@@ -139,7 +147,10 @@ class UnityToGymWrapper(gym.Env):
         shapes = self._get_vis_obs_shape()
         for shape in shapes:
             if uint8_visual:
-                list_spaces.append(spaces.Box(0, 255, dtype=np.uint8, shape=shape))
+                # list_spaces.append(spaces.Box(0, 255, dtype=np.uint8, shape=shape))
+
+                high = np.array([2.0] * 1024)
+                list_spaces.append(spaces.Box(-high, high, dtype=np.float32))
             else:
                 list_spaces.append(spaces.Box(0, 1, dtype=np.float32, shape=shape))
         if self._get_vec_obs_size() > 0:
@@ -150,6 +161,19 @@ class UnityToGymWrapper(gym.Env):
             self._observation_space = spaces.Tuple(list_spaces)
         else:
             self._observation_space = list_spaces[0]  # only return the first one
+
+        # load NN models for VAE encoding and IL
+        mode = 'sim'  # or 'real' or 'both'
+        channel_config = InputChannelConfig.RGB_ONLY  # or 'MASK_ONLY' or 'RGB_MASK'
+        vae_model_path = '/home/edison/Research/Mutual_Imitaion_Reinforcement_Learning/encoder/models/' + 'vae-' + \
+                         mode + '-rgb' + '.pth'  # change channel config
+        print(f'{vae_model_path=}')
+        latent_dim = 1024
+        hidden_dims = [32, 64, 128, 256, 512, 1024]
+        self.vae_model = VAE(in_channels=channel_config.value, latent_dim=latent_dim, hidden_dims=hidden_dims)
+        self.vae_model.eval()
+        self.vae_model.load_state_dict(torch.load(vae_model_path, map_location=torch.device('cpu')))
+        print(f'VAE model {vae_model_path} is loaded!')
 
     def reset(self) -> Union[List[np.ndarray], np.ndarray]:
         """Resets the state of the environment and returns an initial observation.
@@ -190,6 +214,20 @@ class UnityToGymWrapper(gym.Env):
 
         action = np.array(action).reshape((1, self.action_size))
 
+        # action_list = list(action)
+        #
+        # if action_list[-1] != 0:
+        #     action_encode = action_list[-1]
+        # elif action_list[-2] != 0:
+        #     action_encode = action_list[-2]+2
+        # elif action_list[-3] != 0:
+        #     action_encode = action_list[-3]+4
+        # elif action_list[-4] != 0:
+        #     action_encode = action_list[-2]+6
+        # else:
+        #     action_encode = 0
+        # action = np.array(action_encode).reshape((1, self.action_size))
+
         action_tuple = ActionTuple()
         if self.group_spec.action_spec.is_continuous():
             action_tuple.add_continuous(action)
@@ -228,12 +266,15 @@ class UnityToGymWrapper(gym.Env):
             self.visual_obs = self._preprocess_single(visual_obs[0][0])
 
         done = isinstance(info, TerminalSteps)
-
         return (default_observation, info.reward[0], done, {"step": info})
 
     def _preprocess_single(self, single_visual_obs: np.ndarray) -> np.ndarray:
         if self.uint8_visual:
-            return (255.0 * single_visual_obs).astype(np.uint8)
+            # obs = (255.0 * single_visual_obs).astype(np.uint8)
+
+            obs = torch.Tensor(single_visual_obs).permute((2, 0, 1)).unsqueeze(0)
+            obs = self.vae_model.encode(obs)[0][0].detach().numpy()
+            return obs
         else:
             return single_visual_obs
 
@@ -358,3 +399,279 @@ class ActionFlattener:
         :returns: The List containing the branched actions.
         """
         return self.action_lookup[action]
+
+
+if __name__ == '__main__':
+    import csv
+    import os
+    import io
+    import torch
+    import matplotlib.image as mpimg
+    import matplotlib.pyplot as plt
+
+    from mlagents_envs.environment import UnityEnvironment
+    from mlagents_envs.side_channel.environment_parameters_channel import EnvironmentParametersChannel
+    from mlagents_envs.side_channel.engine_configuration_channel import EngineConfigurationChannel
+    from mlagents_envs.side_channel.segmentation_receiver_channel import SegmentationReceiverChannel
+    from mlagents_envs.side_channel.rgb_receiver_channel import RGBReceiverChannel
+    from mlagents_envs.key2action import Key2Action
+
+    import sys
+    sys.path.append("/home/edison/Research/Mutual_Imitaion_Reinforcement_Learning/encoder")
+    sys.path.append("/home/edison/Research/Mutual_Imitaion_Reinforcement_Learning/utils")
+    from vae import VAE
+    from dataset import InputChannelConfig
+
+    import gym
+
+    import numpy as np
+    #from ppo import PPO
+    from stable_baselines3 import PPO, TD3
+    from imitation.util import util
+
+
+    import bc
+    from train_utils import *
+
+
+    # env_path = None  # require Unity Editor to be running
+    env_path = '/home/edison/Terrain/terrain_rgb.x86_64'
+    # env_path = '/home/edison/River/mlagent-ram-seg.x86_64'
+    # env_path = '/home/edison/River/mlagent-ram-test2.x86_64'
+    # env_path = '/home/edison/River/mlagent-ram-4D.x86_64'
+    # env_path = '/home/edison/Research/ml-agents/Visual3DBall.x86_64'
+    # env_path = '/home/edison/TestAgent/testball.x86_64'
+    # env_path = '/home/edison/RollerBall/SlidingCube.x86_64'
+
+    width, height = 128, 128
+
+    channel_env = EnvironmentParametersChannel()
+    channel_env.set_float_parameter("simulation_mode", 1.0)
+
+    channel_eng = EngineConfigurationChannel()
+    channel_eng.set_configuration_parameters(width=width, height=height, quality_level=1, time_scale=1,
+                                             target_frame_rate=None, capture_frame_rate=None)
+
+    channel_seg = SegmentationReceiverChannel()
+    channel_rgb = RGBReceiverChannel()
+
+    unity_env = UnityEnvironment(file_name=env_path, no_graphics=False, seed=1,
+                                 side_channels=[channel_env, channel_eng, channel_seg, channel_rgb],
+                                 additional_args=['-logFile', 'unity.log'])
+    env = UnityToGymWrapper(unity_env, uint8_visual=True, flatten_branched=False)
+    obs = env.reset()
+    # print(f'{env.observation_space=}')
+    print(f'{env.action_space=}')
+    print(f'{obs.shape=}')
+
+    plt.ion()
+    fig = plt.figure()
+    ax_rgb = fig.add_subplot(121)
+    ax_mask = fig.add_subplot(122)
+
+    last_mask = None
+    mask_show = None
+    last_obs = None
+    is_mask_sync = False
+    cur_sync_frame_num = 0
+    min_sync_frame_num = 5
+    i = 0
+
+    save_fig = False  # whether save figures and csv
+    record_bad = False  # set to False to manually record good demos
+
+    # load NN models for VAE encoding and IL
+    mode = 'sim'  # or 'real' or 'both'
+    channel_config = InputChannelConfig.RGB_ONLY  # or 'MASK_ONLY' or 'RGB_MASK'
+    vae_model_path = '/home/edison/Research/Mutual_Imitaion_Reinforcement_Learning/encoder/models/' + 'vae-' +  \
+                      mode + '-rgb' + '.pth'  # change channel config
+    il_model_path = '/home/edison/Research/Mutual_Imitaion_Reinforcement_Learning/weight/BC_RGB_500'
+    print(f'{vae_model_path=}')
+    print(f'{il_model_path=}')
+    latent_dim = 1024
+    hidden_dims = [32, 64, 128, 256, 512, 1024]
+    vae_model = None
+    # vae_model = VAE(in_channels=channel_config.value, latent_dim=latent_dim, hidden_dims=hidden_dims)
+    # vae_model.eval()
+    # vae_model.load_state_dict(torch.load(vae_model_path, map_location=torch.device('cpu')))
+    # print(f'VAE model {vae_model_path} is loaded!')
+
+
+    il_name = "BC"
+    train_il_ep = 2000
+
+    observation_space = gym.spaces.Box(low=-2.0, high=2.0, shape=(1024,), dtype=np.float32)
+    action_space = gym.spaces.MultiDiscrete([3, 3, 3, 3])
+    # action_space = gym.spaces.Discrete(9)
+    datasets = ["MASK_ONLY", "RGB_ONLY", "RGB_MASK"]
+    dataset = datasets[0]
+    rng = np.random.default_rng(0)
+
+    d_s = read_csv_unity()
+    bc_trainer = bc.BC(
+        observation_space=observation_space,
+        action_space=action_space,
+        demonstrations=None,
+        rng=rng,
+        verbose=False,
+    )
+    
+    # bc_policy = bc.reconstruct_policy("weight/" + il_name + "_" + dataset +"_" + str(train_il_ep))
+    bc_policy = bc.reconstruct_policy(il_model_path)
+    print(f'IL model is loaded!')
+
+    trajectory_path = 'trajectories'
+    trajectory_good_path = trajectory_path + '/good'
+    trajectory_bad_path = trajectory_path + '/bad'
+    demo_id = 3
+    print(f'Current demo: {demo_id}')
+    demo_name = f'demo{demo_id}'
+    demo_path = os.path.join(trajectory_bad_path if record_bad else trajectory_good_path, demo_name)
+    if save_fig:
+        os.makedirs(demo_path, exist_ok=True)
+    csv_path = os.path.join(demo_path, 'traj.csv')
+    img_dir = os.path.join(demo_path, 'images')
+    mask_dir = os.path.join(demo_path, 'masks')
+    if save_fig:
+        os.makedirs(img_dir, exist_ok=True)
+        os.makedirs(mask_dir, exist_ok=True)
+
+    obs_path = None
+    mask_path = None
+    waited_frames = 0
+    wait_frames_num = 5
+
+    k2a = Key2Action()  # start a new thread
+    if record_bad:
+        k2a.listener.stop()  # stop capturing keyboard input if using random actions
+    # k2a.listener.stop()
+    def update_demo_path():
+        global demo_name, demo_path, csv_path, img_dir, mask_dir
+        print(f'Current demo: {demo_id}')
+        demo_name = f'demo{demo_id}'
+        demo_path = os.path.join(trajectory_bad_path if record_bad else trajectory_good_path, demo_name)
+        if save_fig:
+            os.makedirs(demo_path, exist_ok=True)
+
+        csv_path = os.path.join(demo_path, 'traj.csv')
+
+        img_dir = os.path.join(demo_path, 'images')
+        mask_dir = os.path.join(demo_path, 'masks')
+        if save_fig:
+            os.makedirs(img_dir, exist_ok=True)
+            os.makedirs(mask_dir, exist_ok=True)
+
+    actions = np.zeros([9,4])
+    actions[1,3] = 1  # upo
+    actions[2,3] = 2  # down
+    actions[3,2] = 1  # l r
+    actions[4,2] = 2  # r r
+    actions[5,1] = 1  # f
+    actions[6,1] = 2  # b
+    actions[7,0] = 1  # l
+    actions[8,0] = 2  # r
+
+    while i < 10000:
+        # get next action either manually or randomly
+        action = k2a.get_multi_discrete_action()  # no action if no keyboard input
+        # action = k2a.get_discrete_action()
+        if record_bad and is_mask_sync:
+            action = k2a.get_random_action()
+            is_mask_sync = False
+
+        # predict action using nn model
+        if vae_model is not None:
+            if channel_config == InputChannelConfig.MASK_ONLY:
+                obs = torch.Tensor(mask_show).permute((2, 0, 1))[0].unsqueeze(0).unsqueeze(0)
+            elif channel_config == InputChannelConfig.RGB_ONLY:
+                obs = torch.Tensor(obs).permute((2, 0, 1)).unsqueeze(0) / 255.0
+            # print(f'{obs.shape=}')
+            encoding = vae_model.encode(obs)[0][0].to("cuda:0")
+            acts = util.safe_to_tensor(actions).to("cuda:0")
+            #obs = util.safe_to_tensor(encoding)
+            #breakpoint()
+            _, log_prob, entropy = bc_policy.evaluate_actions(encoding.unsqueeze(0), acts)
+            print(f'{log_prob=}')
+            action_il = log_prob.cpu().detach().numpy().argmax()
+
+            action_int, _ = bc_policy.predict(encoding.cpu().detach().numpy())
+
+            # result = 0
+            # for idx, v in enumerate():
+            #     if v != 0:
+            #         result = 2 * idx + v
+            #         break
+
+            # if action_int > 0:
+            #     idx = (action_int-1) // 2
+            #     value = (action_int-1) % 2 + 1
+            #     action[idx] = value
+            is_mask_sync = False
+            print(f'IL: {action_il=}, KEY: {action=}, PRED: {action_int=}')
+
+        # save image-mask-action to csv only when action is not all 0
+        if save_fig and obs_path is not None and mask_path is not None and any(action):
+            with open(csv_path, 'a+', newline='') as f:
+                writer = csv.writer(f, delimiter=',')
+                # writer.writerow([obs_path, mask_path, action])
+                writer.writerow([obs_path, action])
+                print(f'Save img-mask-action to {csv_path}')
+            i += 1
+            print(f'{i=}')
+
+        # step, if done get ready to save stuff to the new folders/file
+        obs, reward, done, info = env.step(action)
+        if done:
+            print('Done!')
+            env.reset()
+            demo_id += 1
+            if save_fig:
+                update_demo_path()
+            is_mask_sync = False
+            cur_sync_frame_num = 0
+            continue
+
+        # mask = channel_seg.get_segmentation_mask()
+        # rgb = channel_rgb.get_rgb()
+
+        # if mask is None:
+        #     print(f'Mask is not ready!')
+        #     env.reset()
+        #     mask_path = None
+        #     continue
+
+        # if mask != last_mask:
+        #     mask_stream = io.BytesIO(mask)
+        #     mask_show = mpimg.imread(mask_stream, format='png')
+        #     # if save_fig:
+        #     #     mask_path = os.path.join(mask_dir, f'{i}.png')
+        #     #     plt.imsave(mask_path, mask_show)  # mask figure is over-written only when it changes
+        #     last_mask = mask
+        #     is_mask_sync = False
+        # else:
+        #     cur_sync_frame_num += 1
+        #     # print(f'Synced count {cur_sync_frame_num}')
+        #     if cur_sync_frame_num >= min_sync_frame_num:
+        #         print(f'Mask is fully synced!')
+        #         cur_sync_frame_num = 0
+        #         is_mask_sync = True
+
+        if save_fig:
+            obs_path = os.path.join(img_dir, f'{i}.jpg')
+            plt.imsave(obs_path, obs)  # observation figure changes frequently, so over-written every step
+            mask_path = os.path.join(mask_dir, f'{i}.png')
+            # plt.imsave(mask_path, mask_show)
+
+        # rgb_stream = io.BytesIO(rgb)
+        # rgb_show = mpimg.imread(rgb_stream)
+
+        # mask_stream = io.BytesIO(mask)
+        # mask_show = mpimg.imread(mask_stream, format='png')
+
+        ax_rgb.imshow(obs)
+        # ax_rgb.imshow(rgb_show)
+        # ax_mask.imshow(mask_show)
+
+        fig.canvas.draw()
+        fig.canvas.flush_events()
+

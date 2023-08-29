@@ -393,6 +393,8 @@ namespace Unity.MLAgents
 
         EnvironmentParameters m_EnvironmentParameters;
         StatsRecorder m_StatsRecorder;
+        SegmentationSender m_SegmentationSender;
+        // RGBSender m_RGBSender;
 
         /// <summary>
         /// Returns the <see cref="EnvironmentParameters"/> instance. If training
@@ -416,6 +418,16 @@ namespace Unity.MLAgents
             get { return m_StatsRecorder; }
         }
 
+        public SegmentationSender SegmentationSender
+        {
+            get { return m_SegmentationSender; }
+        }
+
+        // public RGBSender RGBSender
+        // {
+        //     get { return m_RGBSender; }
+        // }
+
         /// <summary>
         /// Initializes the environment, configures it and initializes the Academy.
         /// </summary>
@@ -430,6 +442,8 @@ namespace Unity.MLAgents
             SideChannelManager.RegisterSideChannel(new TrainingAnalyticsSideChannel());
             m_EnvironmentParameters = new EnvironmentParameters();
             m_StatsRecorder = new StatsRecorder();
+            m_SegmentationSender = new SegmentationSender();
+            // m_RGBSender = new RGBSender();
 
             // Try to launch the communicator by using the arguments passed at launch
             var port = ReadPortFromArgs();
@@ -660,6 +674,8 @@ namespace Unity.MLAgents
 
             m_EnvironmentParameters.Dispose();
             m_StatsRecorder.Dispose();
+            m_SegmentationSender.Dispose();
+            // m_RGBSender.Dispose();
             SideChannelManager.UnregisterAllSideChannels();  // unregister custom side channels
 
             if (m_ModelRunners != null)

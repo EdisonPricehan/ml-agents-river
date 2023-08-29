@@ -516,3 +516,20 @@ class UnityEnvironment(BaseEnv):
         signal_name = UnityEnvironment._returncode_to_signal_name(returncode)
         signal_name = f" ({signal_name})" if signal_name else ""
         return f"Environment shut down with return code {returncode}{signal_name}."
+
+
+if __name__ == '__main__':
+    print(f'start env!')
+    env = UnityEnvironment(file_name=None, seed=1, side_channels=[])
+    print(f'start reset!')
+    # Start interacting with the environment.
+    env.reset()
+    print(f'reset finished!')
+
+    behavior_names = list(env.behavior_specs.keys())
+    print(f'{behavior_names=}')
+
+    b_specs = env.behavior_specs[behavior_names[0]]
+    print(f'{b_specs=}')
+
+

@@ -10,7 +10,7 @@ class RawBytesChannel(SideChannel):
     """
 
     def __init__(self, channel_id: uuid.UUID):
-        self._received_messages: List[bytes] = []
+        self._received_messages = []
         super().__init__(channel_id)
 
     def on_message_received(self, msg: IncomingMessage) -> None:
@@ -21,11 +21,11 @@ class RawBytesChannel(SideChannel):
         """
         self._received_messages.append(msg.get_raw_bytes())
 
-    def get_and_clear_received_messages(self) -> List[bytes]:
+    def get_and_clear_received_messages(self):
         """
         returns a list of bytearray received from the environment.
         """
-        result = list(self._received_messages)
+        result = self._received_messages.copy()
         self._received_messages = []
         return result
 
