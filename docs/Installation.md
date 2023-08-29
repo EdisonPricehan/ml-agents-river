@@ -18,13 +18,13 @@ The ML-Agents Toolkit contains several components:
     a Unity scene. It is a foundational layer that facilitates data messaging
     between Unity scene and the Python machine learning algorithms.
     Consequently, `mlagents` depends on `mlagents_envs`.
-- Unity [Project](../Project/) that contains several
+- Unity [Project](https://github.com/Unity-Technologies/ml-agents/tree/main/Project/) that contains several
   [example environments](Learning-Environment-Examples.md) that highlight the
   various features of the toolkit to help you get started.
 
 Consequently, to install and use the ML-Agents Toolkit you will need to:
 
-- Install Unity (2021.3 or later)
+- Install Unity (2022.3 or later)
 - Install Python (3.8.13 or higher)
 - Clone this repository (Optional)
   - __Note:__ If you do not clone the repository, then you will not be
@@ -36,15 +36,15 @@ Consequently, to install and use the ML-Agents Toolkit you will need to:
 - Install the `com.unity.ml-agents.extensions` Unity package (Optional)
 - Install the `mlagents` Python package
 
-### Install **Unity 2021.3** or Later
+### Install **Unity 2022.3** or Later
 
 [Download](https://unity3d.com/get-unity/download) and install Unity. We
 strongly recommend that you install Unity through the Unity Hub as it will
 enable you to manage multiple Unity versions.
 
-### Install **Python 3.8.13** or Higher
+### Install **Python 3.7.2** or Higher
 
-We recommend [installing](https://www.python.org/downloads/) Python 3.8.
+We recommend [installing](https://www.python.org/downloads/) Python 3.7.
 If you are using Windows, please install the x86-64 version and not x86.
 If your Python environment doesn't include `pip3`, see these
 [instructions](https://packaging.python.org/guides/installing-using-linux-tools/#installing-pip-setuptools-wheel-with-linux-package-managers)
@@ -74,7 +74,7 @@ You will need to clone the repository if you plan to modify or extend the
 ML-Agents Toolkit for your purposes. If you plan to contribute those changes
 back, make sure to clone the `main` branch (by omitting `--branch release_20`
 from the command above). See our
-[Contributions Guidelines](CONTRIBUTING.md) for more
+[Contributions Guidelines](../com.unity.ml-agents/CONTRIBUTING.md) for more
 information on contributing to the ML-Agents Toolkit.
 
 ### Install the `com.unity.ml-agents` Unity package
@@ -101,13 +101,13 @@ project by:
 1. Select the `package.json` file.
 
 <p align="center">
-  <img src="images/unity_package_manager_window.png"
+  <img src="../images/unity_package_manager_window.png"
        alt="Unity Package Manager Window"
-       height="300"
+       height="150"
        border="10" />
-  <img src="images/unity_package_json.png"
+  <img src="../images/unity_package_json.png"
      alt="package.json"
-     height="300"
+     height="150"
      border="10" />
 </p>
 

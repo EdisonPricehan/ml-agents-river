@@ -6,6 +6,28 @@ The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/)
 and this project adheres to
 [Semantic Versioning](http://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+### Major Changes
+#### com.unity.ml-agents / com.unity.ml-agents.extensions (C#)
+- The minimum supported Unity version was updated to 2022.3. (#)
+- Added batched raycast sensor option. (#)
+
+#### ml-agents / ml-agents-envs
+
+### Minor Changes
+#### com.unity.ml-agents / com.unity.ml-agents.extensions (C#)
+- Added DecisionStep parameter to DecisionRequester (#)
+  - This will allow the staggering of execution timing when using multi-agents, leading to more stable performance.
+
+#### ml-agents / ml-agents-envs
+- Added training config feature to evenly distribute checkpoints throughout training. (#5842)
+- Updated training area replicator to add a condition to only replicate training areas when running a build. (#5842)
+
+### Bug Fixes
+#### com.unity.ml-agents / com.unity.ml-agents.extensions (C#)
+#### ml-agents / ml-agents-envs
+
+
 ## [2.3.0-exp.3] - 2022-11-21
 ### Major Changes
 #### com.unity.ml-agents / com.unity.ml-agents.extensions (C#)
@@ -26,7 +48,7 @@ versioned under `ml-agents-envs` package in the future (#)
 #### com.unity.ml-agents / com.unity.ml-agents.extensions (C#)
 - Added switch to RayPerceptionSensor to allow rays to be ordered left to right. (#26)
 	- Current alternating order is still the default but will be deprecated.
-- Added suppport for enabling/disabling camera object attached to camera sensor in order to improve performance. (#31)
+- Added support for enabling/disabling camera object attached to camera sensor in order to improve performance. (#31)
 
 #### ml-agents / ml-agents-envs
 - Renaming the path that shadows torch with "mlagents/trainers/torch_entities" and update respective imports (#)

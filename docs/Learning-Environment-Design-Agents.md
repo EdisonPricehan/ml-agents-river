@@ -106,9 +106,12 @@ intervals, add a `Decision Requester` component to the Agent's GameObject.
 Making decisions at regular step intervals is generally most appropriate for
 physics-based simulations. For example, an agent in a robotic simulator that
 must provide fine-control of joint torques should make its decisions every step
-of the simulation. On the other hand, an agent that only needs to make decisions
-when certain game or simulation events occur, such as in a turn-based game,
-should call `Agent.RequestDecision()` manually.
+of the simulation. In games such as real-time strategy, where many agents make
+their decisions at regular intervals, the decision timing for each agent can be
+staggered by setting the `DecisionStep` parameter in the `Decision Requester`
+component for each agent. On the other hand, an agent that only needs to make
+decisions when certain game or simulation events occur, such as in a turn-based
+game, should call `Agent.RequestDecision()` manually.
 
 ## Observations and Sensors
 In order for an agent to learn, the observations should include all the
@@ -500,6 +503,7 @@ Both sensor components have several settings:
   delta, ..., (n-1)*delta, n*delta). For general usage there is no difference
   but if using custom models the left-to-right layout that matches the spatial
   structuring can be preferred (e.g. for processing with conv nets).
+- _Use Batched Raycasts_ (3D only) Whether to use batched raycasts. Enable to use batched raycasts and the jobs system.
 
 In the example image above, the Agent has two `RayPerceptionSensorComponent3D`s.
 Both use 3 Rays Per Direction and 90 Max Ray Degrees. One of the components had
@@ -525,6 +529,8 @@ setting the State Size.
   for the agent that doesn't require a fully rendered image to convey.
 - Use as few rays and tags as necessary to solve the problem in order to improve
   learning stability and agent performance.
+- If you run into performance issues, try using batched raycasts by enabling the _Use Batched Raycast_ setting.
+  (Only available for 3D ray perception sensors.)
 
 ### Grid Observations
 Grid-base observations combine the advantages of 2D spatial representation in

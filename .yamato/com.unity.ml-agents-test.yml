@@ -1,10 +1,10 @@
 {% metadata_file .yamato/coverage_tests.metafile %}
 test_editors:
-    - version: 2021.3
+    - version: 2022.3
         # We want some scene tests to run in the DevProject, but packages there only support 2020+
       testProject: Project
       enableNoDefaultPackages: !!bool true
-    - version: 2022.1
+    - version: 2023.1
       testProject: DevProject
       enableNoDefaultPackages: !!bool true
 
@@ -21,11 +21,11 @@ test_platforms:
     - name: mac
       type: Unity::VM::osx
       image: package-ci/mac:stable
-      flavor: b1.small
+      flavor: b1.large
     - name: linux
       type: Unity::VM
       image: ml-agents/ml-agents-ubuntu-18.04:latest
-      flavor: b1.medium
+      flavor: b1.large
 
 packages:
     - name: com.unity.ml-agents

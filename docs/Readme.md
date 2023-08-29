@@ -29,6 +29,7 @@ developer communities.
 - Support for training single-agent, multi-agent cooperative, and multi-agent
   competitive scenarios via several Deep Reinforcement Learning algorithms (PPO, SAC, MA-POCA, self-play).
 - Support for learning from demonstrations through two Imitation Learning algorithms (BC and GAIL).
+- Quickly and easily add your own [custom training algorithm](Python-Custom-Trainer-Plugin.md) and/or components.
 - Easily definable Curriculum Learning scenarios for complex tasks
 - Train robust agents using environment randomization
 - Flexible agent control with On Demand Decision Making
@@ -40,12 +41,14 @@ developer communities.
 - Wrap Unity learning environments as a [PettingZoo](Python-PettingZoo-API.md) environment
 
 See our [ML-Agents Overview](ML-Agents-Overview.md) page for detailed
-descriptions of all these features.
+descriptions of all these features. Or go straight to our [web docs](https://unity-technologies.github.io/ml-agents/).
 ## Releases & Documentation
 
 **Our latest, stable release is `Release 20`. Click
-[here](https://github.com/Unity-Technologies/ml-agents/tree/release_20_docs/docs/Readme.md)
+[here](Getting-Started.md)
 to get started with the latest release of ML-Agents.**
+
+**You can also check out our new [web docs](https://unity-technologies.github.io/ml-agents/)!**
 
 The table below lists all our releases, including our `main` branch which is
 under active development and may be unstable. A few helpful guidelines:
@@ -79,6 +82,7 @@ cite the following paper as a reference:
   title={Unity: A general platform for intelligent agents},
   author={Juliani, Arthur and Berges, Vincent-Pierre and Teng, Ervin and Cohen, Andrew and Harper, Jonathan and Elion, Chris and Goy, Chris and Gao, Yuan and Henry, Hunter and Mattar, Marwan and Lange, Danny},
   journal={arXiv preprint arXiv:1809.02627},
+  url={https://arxiv.org/pdf/1809.02627.pdf},
   year={2020}
 }
 ```
@@ -88,9 +92,10 @@ cite the following paper as a reference:
 
 ```
 @article{cohen2022,
-  title={On the Use and Misuse of Abosrbing States in Multi-agent Reinforcement Learning},
+  title={On the Use and Misuse of Absorbing States in Multi-agent Reinforcement Learning},
   author={Cohen, Andrew and Teng, Ervin and Berges, Vincent-Pierre and Dong, Ruo-Ping and Henry, Hunter and Mattar, Marwan and Zook, Alexander and Ganguly, Sujoy},
   journal={RL in Games Workshop AAAI 2022},
+  url={http://aaai-rlg.mlanctot.info/papers/AAAI22-RLG_paper_32.pdf},
   year={2022}
 }
 ```
@@ -159,9 +164,8 @@ We have also published a series of blog posts that are relevant for ML-Agents:
 
 ### More from Unity
 
-- [Unity Simulation Pro](https://unity.com/products/unity-simulation-pro)
 - [Unity Robotics](https://github.com/Unity-Technologies/Unity-Robotics-Hub)
-- [Unity Computer Vision](https://unity.com/computer-vision)
+- [Unity Computer Vision](https://github.com/Unity-Technologies/com.unity.perception)
 
 ## Community and Feedback
 

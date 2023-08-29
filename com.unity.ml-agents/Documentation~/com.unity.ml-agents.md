@@ -64,23 +64,34 @@ In Unity 2019.4 or later, open the Package Manager, hit the "+" button, and sele
 ![Package Manager git URL](https://github.com/Unity-Technologies/ml-agents/blob/release_20_docs/docs/images/unity_package_manager_git_url.png)
 
 In the dialog that appears, enter
+<<<<<<< HEAD
  ```
+=======
+
+```
+>>>>>>> 8bcedabd808ffb7097f88b800fc92dea82dfd610
 git+https://github.com/Unity-Technologies/ml-agents.git?path=com.unity.ml-agents#release_20
 ```
 
 You can also edit your project's `manifest.json` directly and add the following line to the `dependencies`
 section:
+
 ```
 "com.unity.ml-agents": "git+https://github.com/Unity-Technologies/ml-agents.git?path=com.unity.ml-agents#release_20",
 ```
+
 See [Git dependencies](https://docs.unity3d.com/Manual/upm-git.html#subfolder) for more information. Note that this
 may take several minutes to resolve the packages the first time that you add it.
 
 #### Local Installation for Development
 
 [Clone the repository](https://github.com/Unity-Technologies/ml-agents/tree/release_20_docs/docs/Installation.md#clone-the-ml-agents-toolkit-repository-optional) and follow the
+<<<<<<< HEAD
 [Local Installation for Development](https://github.com/Unity-Technologies/ml-agents/tree/release_20_docs/docs/Installation.md#advanced-local-installation-for-development-1)
 directions.
+=======
+[Local Installation for Development](https://github.com/Unity-Technologies/ml-agents/tree/release_20_docs/docs/Installation.md#advanced-local-installation-for-development-1) directions.
+>>>>>>> 8bcedabd808ffb7097f88b800fc92dea82dfd610
 
 ## Requirements
 

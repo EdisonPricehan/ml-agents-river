@@ -6,7 +6,7 @@ on:
 jobs:
   publish:
     name: Publish Docs to GH Pages
-    runs-on: [self-hosted, Linux, X64]
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v2
@@ -20,5 +20,5 @@ jobs:
         run: |
           pip install mkdocs
           git remote add public git@github.com:Unity-Technologies/ml-agents.git
-          mkdocs gh-deply --clean -r public
+          mkdocs gh-deploy --clean -r public
 
