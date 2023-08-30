@@ -1,6 +1,6 @@
 import itertools
 import torch
-
+import os
 import numpy as np
 from typing import Any, Dict, List, Optional, Tuple, Union
 
@@ -37,12 +37,14 @@ class UnityToGymWrapper(gym.Env):
     """
 
     def __init__(
-        self,
-        unity_env: BaseEnv,
-        uint8_visual: bool = False,
-        flatten_branched: bool = False,
-        allow_multiple_obs: bool = False,
-        action_space_seed: Optional[int] = None,
+            self,
+            unity_env: BaseEnv,
+            uint8_visual: bool = False,
+            flatten_branched: bool = False,
+            allow_multiple_obs: bool = False,
+            action_space_seed: Optional[int] = None,
+            encode_obs: bool = True,
+            wait_frames_num: int = 0,
     ):
         """
         Environment initialization
@@ -70,6 +72,8 @@ class UnityToGymWrapper(gym.Env):
         # Hidden flag used by Atari environments to determine if the game is over
         self.game_over = False
         self._allow_multiple_obs = allow_multiple_obs
+        self.encode_obs = encode_obs
+        self.wait_frames_num = wait_frames_num
 
         # Check brain configuration
         if len(self._env.behavior_specs) != 1:
@@ -94,8 +98,8 @@ class UnityToGymWrapper(gym.Env):
         else:
             self.uint8_visual = uint8_visual
         if (
-            self._get_n_vis_obs() + self._get_vec_obs_size() >= 2
-            and not self._allow_multiple_obs
+                self._get_n_vis_obs() + self._get_vec_obs_size() >= 2
+                and not self._allow_multiple_obs
         ):
             logger.warning(
                 "The environment contains multiple observations. "
@@ -166,8 +170,8 @@ class UnityToGymWrapper(gym.Env):
         mode = 'sim'  # or 'real' or 'both'
         channel_config = InputChannelConfig.RGB_ONLY  # or 'MASK_ONLY' or 'RGB_MASK'
         vae_model_path = '/home/edison/Research/Mutual_Imitaion_Reinforcement_Learning/encoder/models/' + 'vae-' + \
-                         mode + '-rgb' + '.pth'  # change channel config
-        print(f'{vae_model_path=}')
+                         mode + '-rgb' + '-random' + '.pth'  # change channel config
+        assert os.path.exists(vae_model_path), f'vae model {vae_model_path} not exists!'
         latent_dim = 1024
         hidden_dims = [32, 64, 128, 256, 512, 1024]
         self.vae_model = VAE(in_channels=channel_config.value, latent_dim=latent_dim, hidden_dims=hidden_dims)
@@ -214,20 +218,6 @@ class UnityToGymWrapper(gym.Env):
 
         action = np.array(action).reshape((1, self.action_size))
 
-        # action_list = list(action)
-        #
-        # if action_list[-1] != 0:
-        #     action_encode = action_list[-1]
-        # elif action_list[-2] != 0:
-        #     action_encode = action_list[-2]+2
-        # elif action_list[-3] != 0:
-        #     action_encode = action_list[-3]+4
-        # elif action_list[-4] != 0:
-        #     action_encode = action_list[-2]+6
-        # else:
-        #     action_encode = 0
-        # action = np.array(action_encode).reshape((1, self.action_size))
-
         action_tuple = ActionTuple()
         if self.group_spec.action_spec.is_continuous():
             action_tuple.add_continuous(action)
@@ -243,6 +233,16 @@ class UnityToGymWrapper(gym.Env):
             self.game_over = True
             return self._single_step(terminal_step)
         else:
+            if self.wait_frames_num > 0:
+                action = np.ones_like(action)  # doing no movements, just want the visual observation to be stable
+                action_tuple.add_discrete(action)
+                i = -1
+                while (i := i + 1) < self.wait_frames_num:
+                    self._env.set_actions(self.name, action_tuple)
+                    self._env.step()
+                decision_step_new, terminal_step_new = self._env.get_steps(self.name)
+                assert len(terminal_step_new) == 0, 'Agent done flag should not change if no action!'
+                decision_step.obs = decision_step_new.obs  # only update the obs, leave reward, info, done unchanged
             return self._single_step(decision_step)
 
     def _single_step(self, info: Union[DecisionSteps, TerminalSteps]) -> GymStepResult:
@@ -266,14 +266,15 @@ class UnityToGymWrapper(gym.Env):
             self.visual_obs = self._preprocess_single(visual_obs[0][0])
 
         done = isinstance(info, TerminalSteps)
-        return (default_observation, info.reward[0], done, {"step": info})
+        return default_observation, info.reward[0], done, {"step": info}
 
     def _preprocess_single(self, single_visual_obs: np.ndarray) -> np.ndarray:
         if self.uint8_visual:
-            # obs = (255.0 * single_visual_obs).astype(np.uint8)
-
-            obs = torch.Tensor(single_visual_obs).permute((2, 0, 1)).unsqueeze(0)
-            obs = self.vae_model.encode(obs)[0][0].detach().numpy()
+            if self.encode_obs:  # obs is 1d vector of float32
+                obs = torch.Tensor(single_visual_obs).permute((2, 0, 1)).unsqueeze(0)
+                obs = self.vae_model.encode(obs)[0][0].detach().numpy()
+            else:  # obs is 3d image of uint8
+                obs = (255.0 * single_visual_obs).astype(np.uint8)
             return obs
         else:
             return single_visual_obs
@@ -293,7 +294,7 @@ class UnityToGymWrapper(gym.Env):
         return result
 
     def _get_vis_obs_list(
-        self, step_result: Union[DecisionSteps, TerminalSteps]
+            self, step_result: Union[DecisionSteps, TerminalSteps]
     ) -> List[np.ndarray]:
         result: List[np.ndarray] = []
         for obs in step_result.obs:
@@ -302,7 +303,7 @@ class UnityToGymWrapper(gym.Env):
         return result
 
     def _get_vector_obs(
-        self, step_result: Union[DecisionSteps, TerminalSteps]
+            self, step_result: Union[DecisionSteps, TerminalSteps]
     ) -> np.ndarray:
         result: List[np.ndarray] = []
         for obs in step_result.obs:
@@ -404,6 +405,7 @@ class ActionFlattener:
 if __name__ == '__main__':
     import csv
     import os
+    import sys
     import io
     import torch
     import matplotlib.image as mpimg
@@ -416,7 +418,6 @@ if __name__ == '__main__':
     from mlagents_envs.side_channel.rgb_receiver_channel import RGBReceiverChannel
     from mlagents_envs.key2action import Key2Action
 
-    import sys
     sys.path.append("/home/edison/Research/Mutual_Imitaion_Reinforcement_Learning/encoder")
     sys.path.append("/home/edison/Research/Mutual_Imitaion_Reinforcement_Learning/utils")
     from vae import VAE
@@ -425,14 +426,12 @@ if __name__ == '__main__':
     import gym
 
     import numpy as np
-    #from ppo import PPO
+    # from ppo import PPO
     from stable_baselines3 import PPO, TD3
     from imitation.util import util
 
-
     import bc
     from train_utils import *
-
 
     # env_path = None  # require Unity Editor to be running
     env_path = '/home/edison/Terrain/terrain_rgb.x86_64'
@@ -483,8 +482,8 @@ if __name__ == '__main__':
     # load NN models for VAE encoding and IL
     mode = 'sim'  # or 'real' or 'both'
     channel_config = InputChannelConfig.RGB_ONLY  # or 'MASK_ONLY' or 'RGB_MASK'
-    vae_model_path = '/home/edison/Research/Mutual_Imitaion_Reinforcement_Learning/encoder/models/' + 'vae-' +  \
-                      mode + '-rgb' + '.pth'  # change channel config
+    vae_model_path = '/home/edison/Research/Mutual_Imitaion_Reinforcement_Learning/encoder/models/' + 'vae-' + \
+                     mode + '-rgb' + '.pth'  # change channel config
     il_model_path = '/home/edison/Research/Mutual_Imitaion_Reinforcement_Learning/weight/BC_RGB_500'
     print(f'{vae_model_path=}')
     print(f'{il_model_path=}')
@@ -495,7 +494,6 @@ if __name__ == '__main__':
     # vae_model.eval()
     # vae_model.load_state_dict(torch.load(vae_model_path, map_location=torch.device('cpu')))
     # print(f'VAE model {vae_model_path} is loaded!')
-
 
     il_name = "BC"
     train_il_ep = 2000
@@ -515,7 +513,7 @@ if __name__ == '__main__':
         rng=rng,
         verbose=False,
     )
-    
+
     # bc_policy = bc.reconstruct_policy("weight/" + il_name + "_" + dataset +"_" + str(train_il_ep))
     bc_policy = bc.reconstruct_policy(il_model_path)
     print(f'IL model is loaded!')
@@ -561,15 +559,16 @@ if __name__ == '__main__':
             os.makedirs(img_dir, exist_ok=True)
             os.makedirs(mask_dir, exist_ok=True)
 
-    actions = np.zeros([9,4])
-    actions[1,3] = 1  # upo
-    actions[2,3] = 2  # down
-    actions[3,2] = 1  # l r
-    actions[4,2] = 2  # r r
-    actions[5,1] = 1  # f
-    actions[6,1] = 2  # b
-    actions[7,0] = 1  # l
-    actions[8,0] = 2  # r
+
+    actions = np.zeros([9, 4])
+    actions[1, 3] = 1  # up
+    actions[2, 3] = 2  # down
+    actions[3, 2] = 1  # l r
+    actions[4, 2] = 2  # r r
+    actions[5, 1] = 1  # f
+    actions[6, 1] = 2  # b
+    actions[7, 0] = 1  # l
+    actions[8, 0] = 2  # r
 
     while i < 10000:
         # get next action either manually or randomly
@@ -588,8 +587,8 @@ if __name__ == '__main__':
             # print(f'{obs.shape=}')
             encoding = vae_model.encode(obs)[0][0].to("cuda:0")
             acts = util.safe_to_tensor(actions).to("cuda:0")
-            #obs = util.safe_to_tensor(encoding)
-            #breakpoint()
+            # obs = util.safe_to_tensor(encoding)
+            # breakpoint()
             _, log_prob, entropy = bc_policy.evaluate_actions(encoding.unsqueeze(0), acts)
             print(f'{log_prob=}')
             action_il = log_prob.cpu().detach().numpy().argmax()
@@ -674,4 +673,3 @@ if __name__ == '__main__':
 
         fig.canvas.draw()
         fig.canvas.flush_events()
-

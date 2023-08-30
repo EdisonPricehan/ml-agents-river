@@ -19,7 +19,7 @@ if __name__ == '__main__':
 
     unity_env = UnityEnvironment(file_name=env_path, no_graphics=False, seed=1,
                                  additional_args=['-logFile', 'unity.log'])
-    env = UnityToGymWrapper(unity_env, uint8_visual=True, flatten_branched=False)
+    env = UnityToGymWrapper(unity_env, uint8_visual=True, flatten_branched=False, encode_obs=False, wait_frames_num=0)
     print(f'Env loaded!')
 
     i = -1
@@ -31,6 +31,6 @@ if __name__ == '__main__':
         # print(f'{obs.shape=}')
         obs_path = os.path.join(img_save_dir, ('%04d' % i) + '.jpg')
         plt.imsave(obs_path, obs)
-        time.sleep(0.1)
+        # time.sleep(0.1)
 
     print(f'All images saved!')
