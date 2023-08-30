@@ -2,7 +2,7 @@ using System;
 using System.Linq;
 using Unity.MLAgents.SideChannels;
 using UnityEngine;
-using UnityEngine.Perception.GroundTruth;
+// using UnityEngine.Perception.GroundTruth;
 
 
 namespace Unity.MLAgents
@@ -14,7 +14,7 @@ namespace Unity.MLAgents
 
         private readonly RawBytesChannel m_Channel;
 
-        private readonly PerceptionCamera m_PerceptionCamera;
+        // private readonly PerceptionCamera m_PerceptionCamera;
 
         internal RGBSender()
         {
@@ -27,12 +27,12 @@ namespace Unity.MLAgents
             }
 
             // get perceptioncamera component reference
-            m_PerceptionCamera = mainCamera.GetComponent<PerceptionCamera>();
-            if (!m_PerceptionCamera)
-            {
-                Debug.Log("Component PerceptionCamera is not found!");
-                return;
-            }
+            // m_PerceptionCamera = mainCamera.GetComponent<PerceptionCamera>();
+            // if (!m_PerceptionCamera)
+            // {
+            //     Debug.Log("Component PerceptionCamera is not found!");
+            //     return;
+            // }
 
             // init rawbytes side channel and register it
             m_Channel = new RawBytesChannel(new Guid(k_RGBChannelDefaultId));
