@@ -45,6 +45,7 @@ class UnityToGymWrapper(gym.Env):
             action_space_seed: Optional[int] = None,
             encode_obs: bool = True,
             wait_frames_num: int = 0,
+            vae_model_name: str = '',
     ):
         """
         Environment initialization
@@ -166,11 +167,21 @@ class UnityToGymWrapper(gym.Env):
         else:
             self._observation_space = list_spaces[0]  # only return the first one
 
+        # statistical info
+        self.ep_rew = 0
+        self.ep_len = 0
+
         # load NN models for VAE encoding and IL
+        if encode_obs and vae_model_name == '':
+            print('VAE model name not specified when needing image encoder!')
+            exit(0)
+        if not encode_obs or vae_model_name == '':  # no need to load vae model
+            return
+
         mode = 'sim'  # or 'real' or 'both'
         channel_config = InputChannelConfig.RGB_ONLY  # or 'MASK_ONLY' or 'RGB_MASK'
-        vae_model_path = '/home/edison/Research/Mutual_Imitaion_Reinforcement_Learning/encoder/models/' + 'vae-' + \
-                         mode + '-rgb' + '-random' + '.pth'  # change channel config
+        vae_model_dir = '/home/edison/Research/Mutual_Imitaion_Reinforcement_Learning/encoder/models/'
+        vae_model_path = vae_model_dir + vae_model_name
         assert os.path.exists(vae_model_path), f'vae model {vae_model_path} not exists!'
         latent_dim = 1024
         hidden_dims = [32, 64, 128, 256, 512, 1024]
@@ -189,6 +200,9 @@ class UnityToGymWrapper(gym.Env):
         n_agents = len(decision_step)
         self._check_agents(n_agents)
         self.game_over = False
+
+        self.ep_rew = 0
+        self.ep_len = 0
 
         res: GymStepResult = self._single_step(decision_step)
         return res[0]
@@ -266,7 +280,15 @@ class UnityToGymWrapper(gym.Env):
             self.visual_obs = self._preprocess_single(visual_obs[0][0])
 
         done = isinstance(info, TerminalSteps)
-        return default_observation, info.reward[0], done, {"step": info}
+
+        self.ep_rew += info.reward[0]
+        self.ep_len += 1
+        if done:
+            # print(f'Episode reward: {self.ep_rew}, episode length: {self.ep_len}')
+            return default_observation, info.reward[0], done, {"step": info,
+                                                               "episode": {'r': self.ep_rew, 'l': self.ep_len}}
+        else:
+            return default_observation, info.reward[0], done, {}
 
     def _preprocess_single(self, single_visual_obs: np.ndarray) -> np.ndarray:
         if self.uint8_visual:
@@ -433,8 +455,10 @@ if __name__ == '__main__':
     import bc
     from train_utils import *
 
-    # env_path = None  # require Unity Editor to be running
-    env_path = '/home/edison/Terrain/terrain_rgb.x86_64'
+    env_path = None  # require Unity Editor to be running
+    # env_path = '/home/edison/Terrain/terrain_rgb.x86_64'
+    # env_path = '/home/edison/Terrain/circular_river_medium/circular_river_medium.x86_64'
+    # env_path = '/home/edison/Terrain/circular_river_easy/circular_river_easy.x86_64'
     # env_path = '/home/edison/River/mlagent-ram-seg.x86_64'
     # env_path = '/home/edison/River/mlagent-ram-test2.x86_64'
     # env_path = '/home/edison/River/mlagent-ram-4D.x86_64'
@@ -454,19 +478,21 @@ if __name__ == '__main__':
     channel_seg = SegmentationReceiverChannel()
     channel_rgb = RGBReceiverChannel()
 
-    unity_env = UnityEnvironment(file_name=env_path, no_graphics=False, seed=1,
-                                 side_channels=[channel_env, channel_eng, channel_seg, channel_rgb],
+    env_seed = 3
+
+    unity_env = UnityEnvironment(file_name=env_path, no_graphics=False, seed=env_seed,
+                                 # side_channels=[channel_env, channel_eng, channel_seg, channel_rgb],
                                  additional_args=['-logFile', 'unity.log'])
-    env = UnityToGymWrapper(unity_env, uint8_visual=True, flatten_branched=False)
+    env = UnityToGymWrapper(unity_env, uint8_visual=True, flatten_branched=False, encode_obs=False, wait_frames_num=0)
     obs = env.reset()
     # print(f'{env.observation_space=}')
     print(f'{env.action_space=}')
     print(f'{obs.shape=}')
 
-    plt.ion()
-    fig = plt.figure()
-    ax_rgb = fig.add_subplot(121)
-    ax_mask = fig.add_subplot(122)
+    # plt.ion()
+    # fig = plt.figure()
+    # ax_rgb = fig.add_subplot(121)
+    # ax_mask = fig.add_subplot(122)
 
     last_mask = None
     mask_show = None
@@ -483,7 +509,7 @@ if __name__ == '__main__':
     mode = 'sim'  # or 'real' or 'both'
     channel_config = InputChannelConfig.RGB_ONLY  # or 'MASK_ONLY' or 'RGB_MASK'
     vae_model_path = '/home/edison/Research/Mutual_Imitaion_Reinforcement_Learning/encoder/models/' + 'vae-' + \
-                     mode + '-rgb' + '.pth'  # change channel config
+                     mode + '-rgb' + '-random' + '.pth'  # change channel config
     il_model_path = '/home/edison/Research/Mutual_Imitaion_Reinforcement_Learning/weight/BC_RGB_500'
     print(f'{vae_model_path=}')
     print(f'{il_model_path=}')
@@ -518,10 +544,10 @@ if __name__ == '__main__':
     bc_policy = bc.reconstruct_policy(il_model_path)
     print(f'IL model is loaded!')
 
-    trajectory_path = 'trajectories'
+    trajectory_path = 'trajectories/easy'
     trajectory_good_path = trajectory_path + '/good'
     trajectory_bad_path = trajectory_path + '/bad'
-    demo_id = 3
+    demo_id = 9
     print(f'Current demo: {demo_id}')
     demo_name = f'demo{demo_id}'
     demo_path = os.path.join(trajectory_bad_path if record_bad else trajectory_good_path, demo_name)
@@ -608,20 +634,23 @@ if __name__ == '__main__':
             is_mask_sync = False
             print(f'IL: {action_il=}, KEY: {action=}, PRED: {action_int=}')
 
+        # step, if done get ready to save stuff to the new folders/file
+        obs, reward, done, info = env.step(action)
+
         # save image-mask-action to csv only when action is not all 0
-        if save_fig and obs_path is not None and mask_path is not None and any(action):
+        if save_fig and obs_path is not None and mask_path is not None and any(a != 1 for a in action):
             with open(csv_path, 'a+', newline='') as f:
                 writer = csv.writer(f, delimiter=',')
                 # writer.writerow([obs_path, mask_path, action])
-                writer.writerow([obs_path, action])
-                print(f'Save img-mask-action to {csv_path}')
+                # writer.writerow([obs_path, action])
+                writer.writerow([obs_path, action, reward, 1 if done else 0])
+                # print(f'Save img-mask-action to {csv_path}')
             i += 1
-            print(f'{i=}')
+            print(f'Save {i}th img-action-reward-done tuple to {csv_path}.')
 
-        # step, if done get ready to save stuff to the new folders/file
-        obs, reward, done, info = env.step(action)
         if done:
             print('Done!')
+            # break
             env.reset()
             demo_id += 1
             if save_fig:
@@ -656,9 +685,9 @@ if __name__ == '__main__':
         #         is_mask_sync = True
 
         if save_fig:
-            obs_path = os.path.join(img_dir, f'{i}.jpg')
+            obs_path = os.path.join(img_dir, ('%04d' % i) + '.jpg')
             plt.imsave(obs_path, obs)  # observation figure changes frequently, so over-written every step
-            mask_path = os.path.join(mask_dir, f'{i}.png')
+            mask_path = os.path.join(mask_dir, ('%04d' % i) + '.png')
             # plt.imsave(mask_path, mask_show)
 
         # rgb_stream = io.BytesIO(rgb)
@@ -667,9 +696,9 @@ if __name__ == '__main__':
         # mask_stream = io.BytesIO(mask)
         # mask_show = mpimg.imread(mask_stream, format='png')
 
-        ax_rgb.imshow(obs)
+        # ax_rgb.imshow(obs)
         # ax_rgb.imshow(rgb_show)
         # ax_mask.imshow(mask_show)
 
-        fig.canvas.draw()
-        fig.canvas.flush_events()
+        # fig.canvas.draw()
+        # fig.canvas.flush_events()
