@@ -8,14 +8,18 @@ import matplotlib.pyplot as plt
 
 
 if __name__ == '__main__':
-    env_path = '/home/edison/Terrain/circular_river_collision/circular_river_collision.x86_64'
+    # env_path = '/home/edison/Terrain/circular_river_collision/circular_river_collision.x86_64'
+    # env_path = '/home/edison/Terrain/circular_river_easy/circular_river_easy.x86_64'
+    # env_path = '/home/edison/Terrain/circular_river_medium/circular_river_medium.x86_64'
+    env_path = '/home/edison/Terrain/circular_river_hard/circular_river_hard.x86_64'
+    # env_path = None
     img_dir_name = 'sim_images'
     img_save_dir = '/home/edison/Research/ml-agents/ml-agents-envs/mlagents_envs/envs/' + img_dir_name
     os.makedirs(img_save_dir, exist_ok=True)
     print(f'Saving images to {img_save_dir} ...')
 
     max_img_num = 2000
-    wait_frame_num = 3
+    wait_frame_num = 0
 
     unity_env = UnityEnvironment(file_name=env_path, no_graphics=False, seed=1,
                                  additional_args=['-logFile', 'unity.log'])
