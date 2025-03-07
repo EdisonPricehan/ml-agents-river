@@ -305,7 +305,10 @@ class UnityToGymWrapper(gym.Env):
 
         # Update reward and cost
         cur_reward = info.reward[0]
+        if abs(cur_reward) > 1e-6:
+            cur_reward = 1  # Make immediate reward of a meaningful step to be 1
         cur_cost = 0
+
         if self.safe_rl:
             if terminated or truncated:  # Terminal rewards and costs
                 # Update done stats
@@ -339,7 +342,7 @@ class UnityToGymWrapper(gym.Env):
                 return (default_observation, cur_reward, terminated, truncated,
                         {"step": info, "episode": {'r': self.ep_rew, 'l': self.ep_len}})
             else:
-                return default_observation, info.reward[0], terminated, truncated, {}
+                return default_observation, cur_reward, terminated, truncated, {}
 
     def _preprocess_single(self, single_visual_obs: np.ndarray) -> np.ndarray:
         """
