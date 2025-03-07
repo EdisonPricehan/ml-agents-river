@@ -231,9 +231,13 @@ def _observation_to_np_array(
         img = np.reshape(img, obs.shape)
         return img
     else:
-        img = process_pixels(
-            obs.compressed_data, expected_channels, list(obs.compressed_channel_mapping)
-        )
+        if len(obs.compressed_data) == 0:
+            print(f'No data in this observation!')
+            img = np.zeros(obs.shape, dtype=np.float32)
+        else:
+            img = process_pixels(
+                obs.compressed_data, expected_channels, list(obs.compressed_channel_mapping)
+            )
         # Compare decompressed image size to observation shape and make sure they match
         if list(obs.shape) != list(img.shape):
             raise UnityObservationException(
@@ -375,6 +379,9 @@ def steps_from_proto(
         [agent_info.max_step_reached for agent_info in terminal_agent_info_list],
         dtype=bool,
     )
+
+    done_reason = np.array([agent_info.done_reason for agent_info in terminal_agent_info_list], dtype=np.int32)
+
     decision_agent_id = np.array(
         [agent_info.id for agent_info in decision_agent_info_list], dtype=np.int32
     )
@@ -418,6 +425,7 @@ def steps_from_proto(
             terminal_agent_id,
             terminal_group_id,
             terminal_group_rewards,
+            done_reason,
         ),
     )
 

@@ -167,6 +167,7 @@ class TerminalStep(NamedTuple):
      decision step. For example, if the Agent reached the maximum number of steps for
      the episode.
      - agent_id is an int and an unique identifier for the corresponding Agent.
+     - done_reason: the reason why the episode is ended in range [0, 6]
     """
 
     obs: List[np.ndarray]
@@ -175,6 +176,7 @@ class TerminalStep(NamedTuple):
     agent_id: AgentId
     group_id: GroupId
     group_reward: float
+    done_reason: int
 
 
 class TerminalSteps(Mapping):
@@ -195,13 +197,14 @@ class TerminalSteps(Mapping):
      across simulation steps.
     """
 
-    def __init__(self, obs, reward, interrupted, agent_id, group_id, group_reward):
+    def __init__(self, obs, reward, interrupted, agent_id, group_id, group_reward, done_reason):
         self.obs: List[np.ndarray] = obs
         self.reward: np.ndarray = reward
         self.interrupted: np.ndarray = interrupted
         self.agent_id: np.ndarray = agent_id
         self.group_id: np.ndarray = group_id
         self.group_reward: np.ndarray = group_reward
+        self.done_reason: np.ndarray = done_reason
         self._agent_id_to_index: Optional[Dict[AgentId, int]] = None
 
     @property
@@ -240,6 +243,7 @@ class TerminalSteps(Mapping):
             agent_id=agent_id,
             group_id=group_id,
             group_reward=self.group_reward[agent_index],
+            done_reason=self.done_reason[agent_index],
         )
 
     def __iter__(self) -> Iterator[Any]:
@@ -261,6 +265,7 @@ class TerminalSteps(Mapping):
             agent_id=np.zeros(0, dtype=np.int32),
             group_id=np.zeros(0, dtype=np.int32),
             group_reward=np.zeros(0, dtype=np.float32),
+            done_reason=np.zeros(0, dtype=np.int32),
         )
 
 
@@ -371,7 +376,7 @@ class ActionSpec(NamedTuple):
     @property
     def discrete_size(self) -> int:
         """
-        Returns a an int corresponding to the number of discrete branches.
+        Returns an int corresponding to the number of discrete branches.
         """
         return len(self.discrete_branches)
 
@@ -540,6 +545,20 @@ class BehaviorMapping(Mapping):
         yield from self._dict
 
 
+class CameraPose:
+    x: float
+    y: float
+    z: float
+    yaw: float
+
+    def __init__(self, x: float = 0, y: float = 0, z: float = 0, yaw: float = 0):
+        self.x, self.y, self.z, self.yaw = x, y, z, yaw
+
+    def __str__(self):
+        msg = f'x: {self.x}, y: {self.y}, z: {self.z}, yaw: {self.yaw}'
+        return msg
+
+
 class BaseEnv(ABC):
     @abstractmethod
     def step(self) -> None:
@@ -549,7 +568,7 @@ class BaseEnv(ABC):
         """
 
     @abstractmethod
-    def reset(self) -> None:
+    def reset(self, external_assigned: bool = False) -> None:
         """
         Signals the environment that it must reset the simulation.
         """

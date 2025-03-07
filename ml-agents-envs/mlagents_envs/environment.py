@@ -23,6 +23,7 @@ from mlagents_envs.base_env import (
     BehaviorName,
     AgentId,
     BehaviorMapping,
+    CameraPose,  # TODO Not used yet
 )
 from mlagents_envs.timers import timed, hierarchical_timer
 from mlagents_envs.exception import (
@@ -313,7 +314,7 @@ class UnityEnvironment(BaseEnv):
                 )
         self._side_channel_manager.process_side_channel_message(output.side_channel)
 
-    def reset(self) -> None:
+    def reset(self, external_assigned: bool = False) -> None:
         if self._loaded:
             outputs = self._communicator.exchange(
                 self._generate_reset_input(), self._poll_process
@@ -476,7 +477,7 @@ class UnityEnvironment(BaseEnv):
         )
         return self._wrap_unity_input(rl_in)
 
-    def _generate_reset_input(self) -> UnityInputProto:
+    def _generate_reset_input(self, external_assigned: bool = False) -> UnityInputProto:
         rl_in = UnityRLInputProto()
         rl_in.command = RESET
         rl_in.side_channel = bytes(
@@ -519,12 +520,9 @@ class UnityEnvironment(BaseEnv):
 
 
 if __name__ == '__main__':
-    print(f'start env!')
     env = UnityEnvironment(file_name=None, seed=1, side_channels=[])
-    print(f'start reset!')
     # Start interacting with the environment.
     env.reset()
-    print(f'reset finished!')
 
     behavior_names = list(env.behavior_specs.keys())
     print(f'{behavior_names=}')
