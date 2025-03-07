@@ -148,6 +148,9 @@ namespace Unity.MLAgents.Sensors
             {
                 return new ISensor[] { new StackingSensor(m_Sensor, ObservationStacks) };
             }
+
+            Debug.Log("Created camera sensor!");
+
             return new ISensor[] { m_Sensor };
         }
 

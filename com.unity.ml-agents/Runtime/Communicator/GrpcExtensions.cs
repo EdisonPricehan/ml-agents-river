@@ -85,6 +85,7 @@ namespace Unity.MLAgents
                 Done = ai.done,
                 Id = ai.episodeId,
                 GroupId = ai.groupId,
+                DoneReason = ai.doneReason,
             };
 
             if (ai.discreteActionMasks != null)

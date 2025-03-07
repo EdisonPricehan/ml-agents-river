@@ -45,6 +45,23 @@ namespace Unity.MLAgents
         public bool done;
 
         /// <summary>
+        /// The done reason of the agent
+        /// 0 - Collision,
+        /// 1 - OutOfVolumeLat,
+        /// 2 - OutOfVolumeVertical,
+        /// 3 - YawOverDeviation,
+        /// 4 - Idle,
+        /// 5 - MaxStepReached,
+        /// 6 - Success,
+        /// </summary>
+        public int doneReason;
+
+        /// <summary>
+        /// The done reason of the agent
+        /// </summary>
+        public int downReason;
+
+        /// <summary>
         /// Whether the agent has reached its max step count for this episode.
         /// </summary>
         public bool maxStepReached;
@@ -396,6 +413,8 @@ namespace Unity.MLAgents
         /// </example>
         protected virtual void OnEnable()
         {
+            // Debug.LogWarning("Agent OnEnable!");
+
             LazyInitialize();
         }
 
@@ -543,6 +562,28 @@ namespace Unity.MLAgents
             Disabled,
         }
 
+        public enum DoneReasonRiver
+        {
+            /// <summary>
+            ///  Critical failure reasons
+            /// </summary>
+            Collision,
+            OutOfVolumeHorizontal,
+            OutOfVolumeVertical,
+
+            /// <summary>
+            /// Non-critical failure reasons
+            /// </summary>
+            YawOverDeviation,
+            Idle,
+            MaxStepReached,
+
+            /// <summary>
+            /// Success reason (followed the circular river for a whole round without triggering any above failure case)
+            /// </summary>
+            Success,
+        }
+
         /// <summary>
         /// Called when the attached [GameObject] becomes disabled and inactive.
         /// [GameObject]: https://docs.unity3d.com/Manual/GameObjects.html
@@ -618,6 +659,57 @@ namespace Unity.MLAgents
             ResetSensors();
 
             if (doneReason != DoneReason.Disabled)
+            {
+                // We don't want to update the reward stats when the Agent is disabled, because this will make
+                // the rewards look lower than they actually are during shutdown.
+                m_CompletedEpisodes++;
+                UpdateRewardStats();
+            }
+
+            m_Reward = 0f;
+            m_GroupReward = 0f;
+            m_CumulativeReward = 0f;
+            m_RequestAction = false;
+            m_RequestDecision = false;
+            m_Info.storedActions.Clear();
+        }
+
+        void NotifyAgentDoneRiver(DoneReasonRiver doneReason)
+        {
+            if (m_Info.done)
+            {
+                // The Agent was already marked as Done and should not be notified again
+                return;
+            }
+            m_Info.episodeId = m_EpisodeId;
+            m_Info.reward = m_Reward;
+            m_Info.groupReward = m_GroupReward;
+            m_Info.done = true;
+            m_Info.doneReason = (int) doneReason; // main change from the above function
+            m_Info.maxStepReached = doneReason == DoneReasonRiver.MaxStepReached;
+            m_Info.groupId = m_GroupId;
+            UpdateSensors();
+            // Make sure the latest observations are being passed to training.
+            using (m_CollectObservationsChecker.Start())
+            {
+                CollectObservations(collectObservationsSensor);
+            }
+            // Request the last decision with no callbacks
+            // We request a decision so Python knows the Agent is done immediately
+            m_Brain?.RequestDecision(m_Info, sensors);
+
+            // We also have to write any to any DemonstationStores so that they get the "done" flag.
+            if (DemonstrationWriters.Count != 0)
+            {
+                foreach (var demoWriter in DemonstrationWriters)
+                {
+                    demoWriter.Record(m_Info, sensors);
+                }
+            }
+
+            ResetSensors();
+
+            if (true) // another change from the above function since we dont disable any agent in RFD project
             {
                 // We don't want to update the reward stats when the Agent is disabled, because this will make
                 // the rewards look lower than they actually are during shutdown.
@@ -801,6 +893,12 @@ namespace Unity.MLAgents
         public void EndEpisode()
         {
             EndEpisodeAndReset(DoneReason.DoneCalled);
+        }
+
+        public void EndEpisodeWithReason(DoneReasonRiver reason)
+        {
+            NotifyAgentDoneRiver(reason);
+            _AgentReset();
         }
 
         /// <summary>
@@ -1005,6 +1103,8 @@ namespace Unity.MLAgents
             sensors.Capacity += attachedSensorComponents.Length;
             foreach (var component in attachedSensorComponents)
             {
+                // Debug.LogWarning($"Attached sensor component name: {component.name}");
+
                 sensors.AddRange(component.CreateSensors());
             }
 

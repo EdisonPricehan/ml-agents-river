@@ -4,7 +4,8 @@
     "references": [
         "Unity.Barracuda",
         "Unity.ML-Agents.CommunicatorObjects",
-        "Unity.Mathematics"
+        "Unity.Mathematics",
+        "Unity.Perception.Runtime"
     ],
     "includePlatforms": [],
     "excludePlatforms": [],

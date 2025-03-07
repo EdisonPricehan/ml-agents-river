@@ -1,6 +1,8 @@
 using System;
 using UnityEngine;
 using UnityEngine.Rendering;
+using UnityEngine.Perception.GroundTruth;
+using UnityEngine.Perception.GroundTruth.Labelers;
 
 namespace Unity.MLAgents.Sensors
 {
@@ -10,6 +12,9 @@ namespace Unity.MLAgents.Sensors
     public class CameraSensor : ISensor, IBuiltInSensor, IDisposable
     {
         Camera m_Camera;
+
+        private PerceptionCamera m_PerceptionCamera;
+
         int m_Width;
         int m_Height;
         bool m_Grayscale;
@@ -17,6 +22,8 @@ namespace Unity.MLAgents.Sensors
         private ObservationSpec m_ObservationSpec;
         SensorCompressionType m_CompressionType;
         Texture2D m_Texture;
+
+        private Texture2D m_TextureMask;
 
         /// <summary>
         /// The Camera used for rendering the sensor observations.
@@ -58,6 +65,16 @@ namespace Unity.MLAgents.Sensors
             m_ObservationSpec = ObservationSpec.Visual(height, width, channels, observationType);
             m_CompressionType = compression;
             m_Texture = new Texture2D(width, height, TextureFormat.RGB24, false);
+
+            m_TextureMask = new Texture2D(width, height, TextureFormat.RGBA32, false);
+            m_PerceptionCamera = m_Camera.GetComponent<PerceptionCamera>();
+            if (!m_PerceptionCamera)
+            {
+                Debug.LogError("Perception camera component does not exist!");
+            }
+
+            var numLabelers = m_PerceptionCamera.labelers.Count;
+            Debug.Log($"{numLabelers} labelers found!");
         }
 
         /// <summary>
@@ -89,8 +106,22 @@ namespace Unity.MLAgents.Sensors
         {
             using (TimerStack.Instance.Scoped("CameraSensor.GetCompressedObservation"))
             {
+                // Debug.LogWarning($"Camera sensor texture2d width: {m_Texture.width}, height: {m_Texture.height}");
+
                 ObservationToTexture(m_Camera, m_Texture, m_Width, m_Height);
                 // TODO support more types here, e.g. JPG
+
+                // m_PerceptionCamera.RequestCapture();
+                // Debug.LogWarning("Capture requested!");
+                // SegmentationToTexture(m_PerceptionCamera, m_TextureMask);
+                // var compressed = m_PerceptionCamera.labelers[0].segmentationBytes;
+                // while (compressed == null)
+                // {
+                //     Debug.LogWarning("Retry to get updated segmentation bytes...");
+                //     compressed = m_PerceptionCamera.labelers[0].segmentationBytes;
+                // }
+                // Debug.Log("Got new segmentation bytes!");
+
                 var compressed = m_Texture.EncodeToPNG();
                 return compressed;
             }
@@ -161,6 +192,14 @@ namespace Unity.MLAgents.Sensors
             obsCamera.rect = oldRec;
             RenderTexture.active = prevActiveRt;
             RenderTexture.ReleaseTemporary(tempRt);
+        }
+
+        public static void SegmentationToTexture(PerceptionCamera perceptionCamera, Texture2D texture2D)
+        {
+            var prevActiveRt = RenderTexture.active;
+            RenderTexture.active = perceptionCamera.labelers[0].LabelTexture;
+            texture2D.ReadPixels(new Rect(0, 0, texture2D.width, texture2D.height), 0, 0);
+            RenderTexture.active = prevActiveRt;
         }
 
         /// <inheritdoc/>

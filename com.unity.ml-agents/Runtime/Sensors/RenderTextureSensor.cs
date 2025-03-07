@@ -1,5 +1,7 @@
 using System;
+using Unity.Barracuda;
 using UnityEngine;
+using UnityEngine.Perception.GroundTruth;
 
 namespace Unity.MLAgents.Sensors
 {
@@ -8,12 +10,14 @@ namespace Unity.MLAgents.Sensors
     /// </summary>
     public class RenderTextureSensor : ISensor, IBuiltInSensor, IDisposable
     {
-        RenderTexture m_RenderTexture;
+        public RenderTexture m_RenderTexture;
         bool m_Grayscale;
         string m_Name;
         private ObservationSpec m_ObservationSpec;
         SensorCompressionType m_CompressionType;
         Texture2D m_Texture;
+
+        private PerceptionCamera perceptionCamera;
 
         /// <summary>
         /// The compression type used by the sensor.
@@ -47,6 +51,23 @@ namespace Unity.MLAgents.Sensors
             m_Texture = new Texture2D(width, height, TextureFormat.RGB24, false);
         }
 
+        public RenderTextureSensor(
+            PerceptionCamera pc, bool grayscale, string name, SensorCompressionType compressionType)
+        {
+            perceptionCamera = pc;
+            m_RenderTexture = perceptionCamera.labelers[0].LabelTexture;
+            var width = m_RenderTexture != null ? m_RenderTexture.width : 128;
+            var height = m_RenderTexture != null ? m_RenderTexture.height : 128;
+
+            // Debug.LogWarning($"Initing render texture sensor, width: {width}, height: {height}");
+
+            m_Grayscale = grayscale;
+            m_Name = name;
+            m_ObservationSpec = ObservationSpec.Visual(height, width, grayscale ? 1 : 4);
+            m_CompressionType = compressionType;
+            m_Texture = new Texture2D(width, height, TextureFormat.RGBA32, false);
+        }
+
         /// <inheritdoc/>
         public string GetName()
         {
@@ -62,8 +83,18 @@ namespace Unity.MLAgents.Sensors
         /// <inheritdoc/>
         public byte[] GetCompressedObservation()
         {
+            // Debug.LogWarning("Getting render texture observation!");
+
             using (TimerStack.Instance.Scoped("RenderTextureSensor.GetCompressedObservation"))
             {
+                m_RenderTexture = perceptionCamera.labelers[0].LabelTexture;
+
+                if (m_RenderTexture == null)
+                {
+                    Debug.LogWarning("render texture is null!");
+                    return Array.Empty<byte>();
+                }
+
                 ObservationToTexture(m_RenderTexture, m_Texture);
                 // TODO support more types here, e.g. JPG
                 var compressed = m_Texture.EncodeToPNG();
@@ -107,6 +138,9 @@ namespace Unity.MLAgents.Sensors
         /// <param name="texture2D">Texture2D to render to.</param>
         public static void ObservationToTexture(RenderTexture obsTexture, Texture2D texture2D)
         {
+            // Debug.LogWarning($"RenderTexture shape: {obsTexture.width} {obsTexture.height} {obsTexture.depth}");
+            // Debug.LogWarning($"Texture2D shape: {texture2D.width} {texture2D.height}");
+
             var prevActiveRt = RenderTexture.active;
             RenderTexture.active = obsTexture;
 

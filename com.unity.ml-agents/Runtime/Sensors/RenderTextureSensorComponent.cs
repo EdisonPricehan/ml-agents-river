@@ -2,6 +2,8 @@ using System;
 using UnityEngine;
 using UnityEngine.Serialization;
 
+using UnityEngine.Perception.GroundTruth;
+
 namespace Unity.MLAgents.Sensors
 {
     /// <summary>
@@ -11,6 +13,8 @@ namespace Unity.MLAgents.Sensors
     public class RenderTextureSensorComponent : SensorComponent, IDisposable
     {
         RenderTextureSensor m_Sensor;
+
+        private PerceptionCamera perceptionCamera;
 
         /// <summary>
         /// The [RenderTexture](https://docs.unity3d.com/ScriptReference/RenderTexture.html) instance
@@ -85,12 +89,28 @@ namespace Unity.MLAgents.Sensors
         /// <inheritdoc/>
         public override ISensor[] CreateSensors()
         {
+            perceptionCamera = GetComponent<PerceptionCamera>();
+            if (perceptionCamera == null)
+            {
+                Debug.LogError("Getting perception camera component failed!");
+            }
+            m_RenderTexture = perceptionCamera.labelers[0].LabelTexture;
+
             Dispose();
-            m_Sensor = new RenderTextureSensor(RenderTexture, Grayscale, SensorName, m_Compression);
+
+            // m_Sensor = new RenderTextureSensor(RenderTexture, Grayscale, SensorName, m_Compression);
+
+            m_Sensor = new RenderTextureSensor(perceptionCamera, Grayscale, SensorName, m_Compression);
+
+            m_Sensor.m_RenderTexture = m_RenderTexture;  // update rt
+
             if (ObservationStacks != 1)
             {
                 return new ISensor[] { new StackingSensor(m_Sensor, ObservationStacks) };
             }
+
+            Debug.Log("Created render texture sensor!");
+
             return new ISensor[] { m_Sensor };
         }
 
@@ -99,10 +119,23 @@ namespace Unity.MLAgents.Sensors
         /// </summary>
         internal void UpdateSensor()
         {
+            m_RenderTexture = perceptionCamera.labelers[0].LabelTexture;
+            if (m_RenderTexture == null)
+            {
+                Debug.LogWarning("Updating sensor, component rt is null!");
+            }
+            else
+            {
+                Debug.LogWarning("Updating sensor, component rt is NOT null!");
+            }
+
             if (m_Sensor != null)
             {
                 m_Sensor.CompressionType = m_Compression;
+
+                m_Sensor.m_RenderTexture = m_RenderTexture;  // update render texture
             }
+
         }
 
         /// <summary>

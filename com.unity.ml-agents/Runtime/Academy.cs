@@ -393,7 +393,7 @@ namespace Unity.MLAgents
 
         EnvironmentParameters m_EnvironmentParameters;
         StatsRecorder m_StatsRecorder;
-        SegmentationSender m_SegmentationSender;
+        // SegmentationSender m_SegmentationSender;
         // RGBSender m_RGBSender;
 
         /// <summary>
@@ -418,10 +418,10 @@ namespace Unity.MLAgents
             get { return m_StatsRecorder; }
         }
 
-        public SegmentationSender SegmentationSender
-        {
-            get { return m_SegmentationSender; }
-        }
+        // public SegmentationSender SegmentationSender
+        // {
+        //     get { return m_SegmentationSender; }
+        // }
 
         // public RGBSender RGBSender
         // {
@@ -442,7 +442,7 @@ namespace Unity.MLAgents
             SideChannelManager.RegisterSideChannel(new TrainingAnalyticsSideChannel());
             m_EnvironmentParameters = new EnvironmentParameters();
             m_StatsRecorder = new StatsRecorder();
-            m_SegmentationSender = new SegmentationSender();
+            // m_SegmentationSender = new SegmentationSender();
             // m_RGBSender = new RGBSender();
 
             // Try to launch the communicator by using the arguments passed at launch
@@ -674,7 +674,7 @@ namespace Unity.MLAgents
 
             m_EnvironmentParameters.Dispose();
             m_StatsRecorder.Dispose();
-            m_SegmentationSender.Dispose();
+            // m_SegmentationSender.Dispose();
             // m_RGBSender.Dispose();
             SideChannelManager.UnregisterAllSideChannels();  // unregister custom side channels
 
