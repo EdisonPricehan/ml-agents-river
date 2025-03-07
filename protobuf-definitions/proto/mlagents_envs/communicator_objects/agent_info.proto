@@ -21,4 +21,5 @@ message AgentInfoProto {
     repeated ObservationProto observations = 13;
     int32 group_id = 14;
     float group_reward = 15;
+    int32 done_reason = 16;  // for fine-grained failure analysis
 }
