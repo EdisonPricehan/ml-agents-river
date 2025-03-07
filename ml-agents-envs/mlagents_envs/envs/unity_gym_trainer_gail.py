@@ -22,7 +22,7 @@ import sys
 sys.path.append("/home/edison/Research/Mutual_Imitaion_Reinforcement_Learning")
 sys.path.append("/home/edison/Research/Mutual_Imitaion_Reinforcement_Learning/encoder")
 sys.path.append("/home/edison/Research/Mutual_Imitaion_Reinforcement_Learning/utils")
-from train_utils import read_csv_unity
+from train_utils import read_csv_unity, get_transitions
 
 
 try:
@@ -30,6 +30,8 @@ try:
 except ImportError:
     MPI = None
 
+
+vae_model_name = 'vae-sim-rgb-easy.pth'
 
 def make_unity_env(env_directory, num_env, visual, start_index=0):
     """
@@ -39,9 +41,9 @@ def make_unity_env(env_directory, num_env, visual, start_index=0):
     def make_env(rank, use_visual=True):  # pylint: disable=C0111
         def _thunk():
             unity_env = UnityEnvironment(env_directory, base_port=5000 + rank)
-            env = UnityToGymWrapper(unity_env, uint8_visual=True, flatten_branched=False)
-            new_logger = configure("/tmp/unity_sb3_ppo_log/", ["stdout", "csv", "tensorboard"])
-            env = Monitor(env, filename=new_logger.get_dir())
+            env = UnityToGymWrapper(unity_env, uint8_visual=True, flatten_branched=False, vae_model_name=vae_model_name)
+            # new_logger = configure("/tmp/unity_sb3_ppo_log/", ["stdout", "csv", "tensorboard"])
+            # env = Monitor(env, filename=new_logger.get_dir())
             env = Monitor(env)
             return env
 
@@ -56,10 +58,15 @@ def make_unity_env(env_directory, num_env, visual, start_index=0):
 
 def train():
     SEED = 42
+    model_save_name = 'circular_easy_ppo_gail'
+    tb_log_dir = './ppo_river_tensorboard/'
+    tb_log_name = 'easy_ppo_gail'
+    train_steps = 100000
 
     # env_path = '/home/edison/Terrain/terrain_rgb.x86_64'
     # env_path = '/home/edison/Terrain/terrain_rgb_action1d.x86_64'
-    env_path = '/home/edison/Terrain/terrain_rgb_action4d.x86_64'
+    # env_path = '/home/edison/Terrain/terrain_rgb_action4d.x86_64'
+    env_path = '/home/edison/Terrain/circular_river_easy/circular_river_easy.x86_64'
     env = make_unity_env(env_path, 1, True)
 
     learner = PPO(
@@ -67,8 +74,10 @@ def train():
         policy=MlpPolicy,
         batch_size=64,
         ent_coef=0.0,
-        learning_rate=0.00001,
+        # learning_rate=0.00001,
         n_epochs=10,
+        tensorboard_log=tb_log_dir,
+        verbose=1,
         # seed=SEED,
     )
 
@@ -78,10 +87,19 @@ def train():
         normalize_input_layer=RunningNorm,
     )
 
-    rollouts = read_csv_unity()
+    # rollouts = rollout.rollout(
+    #     expert,
+    #     env,
+    #     rollout.make_sample_until(min_timesteps=None, min_episodes=60),
+    #     rng=np.random.default_rng(SEED),
+    # )
+
+    # rollouts = read_csv_unity()
+    rollouts = get_transitions('dataset/images/sim/UnityRiverDataset/easy/')
+
     gail_trainer = GAIL(
         demonstrations=rollouts,
-        demo_batch_size=100,
+        demo_batch_size=64,
         gen_replay_buffer_capacity=2048,
         n_disc_updates_per_round=10,
         venv=env,
@@ -97,7 +115,7 @@ def train():
     )
 
     # train the learner and evaluate again
-    gail_trainer.train(100000)
+    gail_trainer.train(train_steps)
     # env.seed(SEED)
     learner_rewards_after_training, _ = evaluate_policy(
         learner, env, 100, return_episode_rewards=True,
@@ -106,7 +124,7 @@ def train():
     print("mean reward after training:", np.mean(learner_rewards_after_training))
     print("mean reward before training:", np.mean(learner_rewards_before_training))
 
-    learner.save('terrain_rgb_ppo_action4d_gail')
+    learner.save(model_save_name)
     print(f'Model trained and saved!')
 
 
