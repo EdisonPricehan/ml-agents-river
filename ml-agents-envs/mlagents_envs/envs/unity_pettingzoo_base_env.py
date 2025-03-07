@@ -1,7 +1,7 @@
 import atexit
 from typing import Optional, List, Set, Dict, Any, Tuple
 import numpy as np
-from gym import error, spaces
+from gymnasium import error, spaces
 from mlagents_envs.base_env import BaseEnv, ActionTuple
 from mlagents_envs.envs.env_helpers import _agent_id_to_behavior, _unwrap_batch_steps
 
