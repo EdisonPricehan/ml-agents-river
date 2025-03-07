@@ -1,22 +1,16 @@
-import itertools
-import torch
-import os
 import numpy as np
 from typing import Any, Dict, List, Optional, Tuple, Union
+from enum import IntEnum
+from collections import defaultdict
 
-import gym
-from gym import error, spaces
+import gymnasium as gym
+from gymnasium import error, spaces
 
 from mlagents_envs.base_env import ActionTuple, BaseEnv
 from mlagents_envs.base_env import DecisionSteps, TerminalSteps
+from mlagents_envs.base_env import CameraPose
 from mlagents_envs import logging_util
-
-import sys
-sys.path.append("/home/edison/Research/Mutual_Imitaion_Reinforcement_Learning")
-sys.path.append("/home/edison/Research/Mutual_Imitaion_Reinforcement_Learning/encoder")
-sys.path.append("/home/edison/Research/Mutual_Imitaion_Reinforcement_Learning/utils")
-from vae import VAE
-from dataset import InputChannelConfig
+from mlagents_envs.envs.action_flattener import DroneActionFlattener
 
 
 class UnityGymException(error.Error):
@@ -28,7 +22,32 @@ class UnityGymException(error.Error):
 
 
 logger = logging_util.get_logger(__name__)
+
+# For Gym: (obs, reward, done, info)
 GymStepResult = Tuple[np.ndarray, float, bool, Dict]
+# For Gymnasium: (obs, reward, terminated, truncated, info)
+GymnasiumStepResult = Tuple[np.ndarray, float, bool, bool, Dict]
+# For omnisafe: (obs, reward, cost, terminated, truncated, info)
+GymSafeStepResult = Tuple[np.ndarray, float, float, bool, bool, Dict]
+
+
+# Granular feedback of the done reason before episode reset
+class DoneReason(IntEnum):
+    # critical failure reasons
+    Collision = 0
+    OutOfVolumeHorizontal = 1
+    OutOfVolumeVertical = 2
+    # loose failure reasons
+    YawOverDeviation = 3
+    Idle = 4
+    MaxStepReached = 5
+    # success reason
+    Success = 6
+
+
+# Cost constants
+COST_LOOSE: float = 0.5  # For less severe terminal conditions, dr = [3, 4, 5]
+COST_TIGHT: float = 1.0  # For severe terminal conditions, dr = [0, 1, 2]
 
 
 class UnityToGymWrapper(gym.Env):
@@ -43,9 +62,7 @@ class UnityToGymWrapper(gym.Env):
             flatten_branched: bool = False,
             allow_multiple_obs: bool = False,
             action_space_seed: Optional[int] = None,
-            encode_obs: bool = True,
-            wait_frames_num: int = 0,
-            vae_model_name: str = '',
+            safe_rl: bool = False,
     ):
         """
         Environment initialization
@@ -58,6 +75,7 @@ class UnityToGymWrapper(gym.Env):
             If False, returns a single np.ndarray containing either only a single visual observation or the array of
             vector observations.
         :param action_space_seed: If non-None, will be used to set the random seed on created gym.Space instances.
+        :param safe_rl: whether include 'cost' in env step result
         """
         self._env = unity_env
 
@@ -65,16 +83,20 @@ class UnityToGymWrapper(gym.Env):
         if not self._env.behavior_specs:
             self._env.step()
 
-        self.visual_obs = None
+        self.rgb_obs = None  # 3-channel rgb
+        self.mask_obs = None  # 4-channel mask (png)
+        self.mixed_obs = None  # 4-channel rgb+mask
 
         # Save the step result from the last time all Agents requested decisions.
         self._previous_decision_step: Optional[DecisionSteps] = None
         self._flattener = None
+
         # Hidden flag used by Atari environments to determine if the game is over
         self.game_over = False
         self._allow_multiple_obs = allow_multiple_obs
-        self.encode_obs = encode_obs
-        self.wait_frames_num = wait_frames_num
+
+        # Whether to return "cost" in step result of CMDP
+        self.safe_rl = safe_rl
 
         # Check brain configuration
         if len(self._env.behavior_specs) != 1:
@@ -123,18 +145,18 @@ class UnityToGymWrapper(gym.Env):
                 self._action_space = spaces.Discrete(branches[0])
             else:
                 if flatten_branched:
-                    self._flattener = ActionFlattener(branches)
-                    self._action_space = self._flattener.action_space
+                    # self._flattener = ActionFlattener(branches)
+                    self._flattener = DroneActionFlattener(branches)
+                    self._action_space = self._flattener.action_space  # Discrete action space
                 else:
                     self._action_space = spaces.MultiDiscrete(branches)
-
         elif self.group_spec.action_spec.is_continuous():
             if flatten_branched:
                 logger.warning(
                     "The environment has a non-discrete action space. It will "
                     "not be flattened."
                 )
-
+            # By default, the continuous action value is in [-1, 1]
             self.action_size = self.group_spec.action_spec.continuous_size
             high = np.array([1] * self.group_spec.action_spec.continuous_size)
             self._action_space = spaces.Box(-high, high, dtype=np.float32)
@@ -144,59 +166,48 @@ class UnityToGymWrapper(gym.Env):
                 "and continuous actions."
             )
 
+        # Seed action space seed
         if action_space_seed is not None:
             self._action_space.seed(action_space_seed)
 
-        # Set observations space
+        # Set observations spaces
         list_spaces: List[gym.Space] = []
         shapes = self._get_vis_obs_shape()
-        for shape in shapes:
-            if uint8_visual:
-                # list_spaces.append(spaces.Box(0, 255, dtype=np.uint8, shape=shape))
+        print(f'Unity gym visual observation shape: {shapes}')
 
-                high = np.array([2.0] * 1024)
-                list_spaces.append(spaces.Box(-high, high, dtype=np.float32))
+        # Store visual observation first
+        for shape in shapes:
+            if self.uint8_visual:
+                list_spaces.append(spaces.Box(0, 255, dtype=np.uint8, shape=shape))
             else:
                 list_spaces.append(spaces.Box(0, 1, dtype=np.float32, shape=shape))
+
+        # Store vector observation last
         if self._get_vec_obs_size() > 0:
-            # vector observation is last
             high = np.array([np.inf] * self._get_vec_obs_size())
             list_spaces.append(spaces.Box(-high, high, dtype=np.float32))
+
         if self._allow_multiple_obs:
             self._observation_space = spaces.Tuple(list_spaces)
         else:
-            self._observation_space = list_spaces[0]  # only return the first one
+            self._observation_space = list_spaces[0]  # only return the first one, 3 channel RGB by default
 
-        # statistical info
+        print(f'Unity gym observation space: {self.observation_space=}')
+        print(f'Unity gym action space: {self.action_space=}')
+
+        # Statistical info
         self.ep_rew = 0
         self.ep_len = 0
+        self.done_reason_stat = defaultdict(lambda: 0)
 
-        # load NN models for VAE encoding and IL
-        if encode_obs and vae_model_name == '':
-            print('VAE model name not specified when needing image encoder!')
-            exit(0)
-        if not encode_obs or vae_model_name == '':  # no need to load vae model
-            self.vae_model = None
-            return
-
-        mode = 'sim'  # or 'real' or 'both'
-        channel_config = InputChannelConfig.RGB_ONLY  # or 'MASK_ONLY' or 'RGB_MASK'
-        vae_model_dir = '/home/edison/Research/Mutual_Imitaion_Reinforcement_Learning/encoder/models/'
-        vae_model_path = vae_model_dir + vae_model_name
-        assert os.path.exists(vae_model_path), f'vae model {vae_model_path} not exists!'
-        latent_dim = 1024
-        hidden_dims = [32, 64, 128, 256, 512, 1024]
-        self.vae_model = VAE(in_channels=channel_config.value, latent_dim=latent_dim, hidden_dims=hidden_dims)
-        self.vae_model.eval()
-        self.vae_model.load_state_dict(torch.load(vae_model_path, map_location=torch.device('cpu')))
-        print(f'VAE model {vae_model_path} is loaded!')
-
-    def reset(self) -> Union[List[np.ndarray], np.ndarray]:
-        """Resets the state of the environment and returns an initial observation.
+    def reset(self, seed=None) -> Union[List[np.ndarray], np.ndarray]:
+        """
+        Resets the state of the environment and returns an initial observation.
         Returns: observation (object/list): the initial observation of the
         space.
         """
         self._env.reset()
+
         decision_step, _ = self._env.get_steps(self.name)
         n_agents = len(decision_step)
         self._check_agents(n_agents)
@@ -205,14 +216,18 @@ class UnityToGymWrapper(gym.Env):
         self.ep_rew = 0
         self.ep_len = 0
 
-        res: GymStepResult = self._single_step(decision_step)
+        res: Union[GymStepResult, GymSafeStepResult] = self._single_step(decision_step)
         return res[0]
 
-    def step(self, action: List[Any]) -> GymStepResult:
-        """Run one timestep of the environment's dynamics. When end of
+    def step(self, action: List[Any]) -> Union[GymStepResult, GymnasiumStepResult, GymSafeStepResult]:
+        """
+        Run one timestep of the environment's dynamics. When end of
         episode is reached, you are responsible for calling `reset()`
         to reset this environment's state.
-        Accepts an action and returns a tuple (observation, reward, done, info).
+        Accepts an action and returns a:
+        Gym tuple (observation, reward, done, info) or
+        Gymnasium tuple (observation, reward, terminated, truncated, info) or
+        Omnisafe CMDP tuple (observation, reward, cost, terminated, truncated, info)
         Args:
             action (object/list): an action provided by the environment
         Returns:
@@ -227,82 +242,246 @@ class UnityToGymWrapper(gym.Env):
                 "returned done = True. You must always call 'reset()' once you "
                 "receive 'done = True'."
             )
+
         if self._flattener is not None:
             # Translate action into list
             action = self._flattener.lookup_action(action)
 
-        action = np.array(action).reshape((1, self.action_size))
+        # Action clipping
+        act = np.array(action).reshape((1, self.action_size))  # (Number of agents X action size)
+        action = np.clip(act, 0, 2)  # Only for multi-discrete drone action
+        # print(f'continuous clipped action: {action}')
 
+        # Set action tuple
         action_tuple = ActionTuple()
         if self.group_spec.action_spec.is_continuous():
             action_tuple.add_continuous(action)
         else:
             action_tuple.add_discrete(action)
-        self._env.set_actions(self.name, action_tuple)
 
+        # Execute action
+        self._env.set_actions(self.name, action_tuple)
         self._env.step()
+
+        # Get results after the executed action
         decision_step, terminal_step = self._env.get_steps(self.name)
         self._check_agents(max(len(decision_step), len(terminal_step)))
+
         if len(terminal_step) != 0:
             # The agent is done
             self.game_over = True
             return self._single_step(terminal_step)
         else:
-            if self.wait_frames_num > 0:
-                action = np.ones_like(action)  # doing no movements, just want the visual observation to be stable
-                action_tuple.add_discrete(action)
-                i = -1
-                while (i := i + 1) < self.wait_frames_num:
-                    self._env.set_actions(self.name, action_tuple)
-                    self._env.step()
-                decision_step_new, terminal_step_new = self._env.get_steps(self.name)
-                assert len(terminal_step_new) == 0, 'Agent done flag should not change if no action!'
-                decision_step.obs = decision_step_new.obs  # only update the obs, leave reward, info, done unchanged
             return self._single_step(decision_step)
 
-    def _single_step(self, info: Union[DecisionSteps, TerminalSteps]) -> GymStepResult:
+    def _single_step(self, info: Union[DecisionSteps, TerminalSteps]) \
+            -> Union[GymStepResult, GymnasiumStepResult, GymSafeStepResult]:
+        # Collect and preprocess visual observations
         if self._allow_multiple_obs:
-            visual_obs = self._get_vis_obs_list(info)
-            visual_obs_list = []
-            for obs in visual_obs:
-                visual_obs_list.append(self._preprocess_single(obs[0]))
-            default_observation = visual_obs_list
-            if self._get_vec_obs_size() >= 1:
-                default_observation.append(self._get_vector_obs(info)[0, :])
+            # Each visual obs is 4-dimensional: (agent count, w/h, h/w, channel)
+            visual_obs_list = self._get_vis_obs_list(info)
+            visual_obs_list_new = []
+            for obs in visual_obs_list:
+                visual_obs_list_new.append(self._preprocess_single(obs[0]))
+            default_observation = visual_obs_list_new  # [(w/h, h/w, channel)]
+
+            # Save rgb and mask for rendering
+            if len(visual_obs_list_new) == 2:
+                self.rgb_obs, self.mask_obs = default_observation[0], default_observation[1]
+                self.mixed_obs = self._preprocess_double_obs(self.rgb_obs, self.mask_obs)
         else:
             if self._get_n_vis_obs() >= 1:
-                visual_obs = self._get_vis_obs_list(info)
-                default_observation = self._preprocess_single(visual_obs[0][0])
+                visual_obs = self._get_vis_obs_list(info)[0][0]
+                default_observation = self._preprocess_single(visual_obs)  # (w/h, h/w, channel)
             else:
                 default_observation = self._get_vector_obs(info)[0, :]
 
-        if self._get_n_vis_obs() >= 1:
-            visual_obs = self._get_vis_obs_list(info)
-            self.visual_obs = self._preprocess_single(visual_obs[0][0])
+        terminated = isinstance(info, TerminalSteps) and info.done_reason != DoneReason.MaxStepReached
+        truncated = isinstance(info, TerminalSteps) and info.done_reason == DoneReason.MaxStepReached
 
-        done = isinstance(info, TerminalSteps)
-
+        # Update statistics
         self.ep_rew += info.reward[0]
         self.ep_len += 1
-        if done:
-            # print(f'Episode reward: {self.ep_rew}, episode length: {self.ep_len}')
-            return default_observation, info.reward[0], done, {"step": info,
-                                                               "episode": {'r': self.ep_rew, 'l': self.ep_len}}
+
+        # Update reward and cost
+        cur_reward = info.reward[0]
+        cur_cost = 0
+        if self.safe_rl:
+            if terminated or truncated:  # Terminal rewards and costs
+                # Update done stats
+                # print(f'{info.done_reason=}')
+                self.done_reason_stat[info.done_reason[0]] += 1
+
+                # update reward and cost (exclusively)
+                if (info.done_reason[0] == DoneReason.YawOverDeviation.value or
+                        info.done_reason[0] == DoneReason.Idle.value or
+                        info.done_reason[0] == DoneReason.MaxStepReached.value):  # loose constraints
+                    cur_reward = 0
+                    cur_cost = COST_LOOSE
+                elif info.done_reason == DoneReason.Success:  # success
+                    pass
+                else:  # tight constraints
+                    cur_reward = 0
+                    cur_cost = COST_TIGHT
+            else:  # Immediate rewards and costs
+                # cur_cost = self.get_water_percentage_cost(self.mask_obs)
+                # cur_cost = self.get_water_iou_cost(self.mask_obs)
+                pass
+
+        # Compose step results
+        if self.safe_rl:
+            # CMDP step results
+            return default_observation, cur_reward, cur_cost, terminated, truncated, {'step': info}
         else:
-            return default_observation, info.reward[0], done, {}
+            # Gymnasium step results
+            if terminated:
+                # print(f'Episode reward: {self.ep_rew}, episode length: {self.ep_len}')
+                return (default_observation, cur_reward, terminated, truncated,
+                        {"step": info, "episode": {'r': self.ep_rew, 'l': self.ep_len}})
+            else:
+                return default_observation, info.reward[0], terminated, truncated, {}
 
     def _preprocess_single(self, single_visual_obs: np.ndarray) -> np.ndarray:
+        """
+        Scale observation to correct range and type if necessary
+        :param single_visual_obs:
+        :return:
+        """
         if self.uint8_visual:
-            if self.encode_obs:  # obs is 1d vector of float32
-                obs = torch.Tensor(single_visual_obs).permute((2, 0, 1)).unsqueeze(0)
-                obs = self.vae_model.encode(obs)[0][0].detach().numpy()
-            else:  # obs is 3d image of uint8
-                obs = (255.0 * single_visual_obs).astype(np.uint8)
+            obs = (255.0 * single_visual_obs).astype(np.uint8)
             return obs
         else:
             return single_visual_obs
 
+    def _preprocess_double_obs(self, rgb_obs: np.ndarray, mask_obs: np.ndarray) -> np.ndarray:
+        """
+        Concat the rgb and mask observations (mask as the alpha channel)
+        :param rgb_obs: H x W x C=3 jpg image
+        :param mask_obs: H x W x C=4 png rgba image
+        :return: H x W x C=4 uint8 image
+        """
+        assert self.uint8_visual, f'Need to enable uint8_visual'
+        assert rgb_obs.shape[-1] == 3, f'rgb obs has wrong shape {rgb_obs.shape}'
+        assert mask_obs.shape[-1] == 4, f'mask obs has wrong shape {mask_obs.shape}'
+
+        # print(f'rgb shape: {rgb_obs.shape}')
+        # print(f'mask shape: {mask_obs.shape}')
+
+        rgb_mask = np.concatenate([rgb_obs, mask_obs[..., 0][..., np.newaxis]], axis=2)  # H x W x C=4
+        return rgb_mask
+
+    def get_water_percentage_cost(self, mask_obs: np.ndarray) -> float:
+        # TODO clearly define this cost
+        assert mask_obs is not None, f'mask obs is None'
+        assert len(mask_obs.shape) == 3, f'mask obs has wrong dimension {mask_obs.shape}'
+        assert mask_obs.shape[-1] == 4, f'mask obs has wrong channel size {mask_obs.shape}'
+
+        h, w, c = mask_obs.shape
+        if mask_obs.dtype is not np.uint8:
+            mask_int = (255 * mask_obs).astype(np.uint8)
+        else:
+            mask_int = mask_obs
+
+        num_all_pixels = h * w
+        num_water_pixels = np.sum([1 if e > 0 else 0 for e in mask_int[..., 0].flatten()])
+        water_ratio = 1.0 * num_water_pixels / num_all_pixels
+        # print(f'all pixels: {num_all_pixels}, water pixels: {num_water_pixels}, ratio: {water_ratio}')
+        return 1 if water_ratio < self.min_water_ratio_thr else 0
+
+    def get_water_iou_cost(self, mask_obs: np.ndarray) -> float:
+        """
+        Calculate the IoU-based cost for the water mask observation against a predefined trapezoidal mask.
+
+        Args:
+            mask_obs (np.ndarray): Observation mask (H x W x C) with 4 channels.
+
+        Returns:
+            float: IoU-based cost, calculated as 1 - IoU.
+        """
+        assert mask_obs is not None, f'mask obs is None'
+        assert len(mask_obs.shape) == 3, f'mask obs has wrong dimension {mask_obs.shape}'
+        assert mask_obs.shape[-1] == 4, f'mask obs has wrong channel size {mask_obs.shape}'
+
+        h, w, c = mask_obs.shape
+        assert h == w, f'Expect square observation, given ({h}, {w}).'
+        if mask_obs.dtype is not np.uint8:
+            mask_int = (255 * mask_obs).astype(np.uint8)
+        else:
+            mask_int = mask_obs
+
+        mask_int = mask_int[..., 0]  # Only need single channel
+        mask_trapezoid = self.create_trapezoidal_mask(
+            side_length=h,
+            top_width=4,
+            down_width=10,
+            trapezoid_height=13,
+        )  # TODO these values can be percentages
+
+        # Compute intersection and union directly
+        intersection = np.logical_and(mask_int == 255, mask_trapezoid == 255).sum()
+        union = np.logical_or(mask_int == 255, mask_trapezoid == 255).sum()
+
+        # Avoid division by zero
+        iou = intersection / (union + 1e-6)
+
+        # Calculate IoU-based cost
+        iou_cost = 1.0 - iou
+        return iou_cost
+
+    def create_trapezoidal_mask(
+        self,
+        side_length: int,
+        top_width: int,
+        down_width: int,
+        trapezoid_height: int,
+    ) -> np.ndarray:
+        """
+        Create a trapezoidal mask for a square observation, with the trapezoid's bottom side aligned to the bottom of the observation.
+
+        Args:
+            side_length (int): Side length of the square observation (height and width of the mask).
+            top_width (int): Width of the trapezoid at the top.
+            down_width (int): Width of the trapezoid at the bottom.
+            trapezoid_height (int): Height of the trapezoid.
+
+        Returns:
+            np.ndarray: A binary mask (2D array) with the trapezoidal region filled with 1s.
+        """
+        assert top_width < side_length
+        assert down_width < side_length
+        assert trapezoid_height < side_length
+        assert top_width <= down_width
+
+        # Initialize the mask with zeros
+        mask = np.zeros((side_length, side_length), dtype=np.uint8)
+
+        # Calculate the vertical positions for the trapezoid
+        bottom_y = side_length  # Bottom edge of the observation
+        top_y = bottom_y - trapezoid_height  # Top edge of the trapezoid
+
+        # Calculate the horizontal positions for the top and bottom edges of the trapezoid
+        top_left = (side_length - top_width) // 2
+        top_right = top_left + top_width
+        bottom_left = (side_length - down_width) // 2
+        bottom_right = bottom_left + down_width
+
+        # Fill in the trapezoidal area
+        for y in range(top_y, bottom_y):
+            # Interpolate the width of the trapezoid at the current height
+            alpha = (y - top_y) / trapezoid_height
+            current_left = int((1 - alpha) * top_left + alpha * bottom_left)
+            current_right = int((1 - alpha) * top_right + alpha * bottom_right)
+
+            # Fill the row in the trapezoidal range
+            mask[y, current_left:current_right] = 255
+
+        return mask
+
     def _get_n_vis_obs(self) -> int:
+        """
+        Get the number of visual observations
+        :return:
+        """
         result = 0
         for obs_spec in self.group_spec.observation_specs:
             if len(obs_spec.shape) == 3:
@@ -310,15 +489,23 @@ class UnityToGymWrapper(gym.Env):
         return result
 
     def _get_vis_obs_shape(self) -> List[Tuple]:
+        """
+        Get all shapes of visual observations
+        :return:
+        """
         result: List[Tuple] = []
         for obs_spec in self.group_spec.observation_specs:
             if len(obs_spec.shape) == 3:
                 result.append(obs_spec.shape)
         return result
 
-    def _get_vis_obs_list(
-            self, step_result: Union[DecisionSteps, TerminalSteps]
-    ) -> List[np.ndarray]:
+    def _get_vis_obs_list(self, step_result: Union[DecisionSteps, TerminalSteps]
+                          ) -> List[np.ndarray]:
+        """
+        Get the data of all visual observations
+        :param step_result:
+        :return:
+        """
         result: List[np.ndarray] = []
         for obs in step_result.obs:
             if len(obs.shape) == 4:
@@ -328,6 +515,11 @@ class UnityToGymWrapper(gym.Env):
     def _get_vector_obs(
             self, step_result: Union[DecisionSteps, TerminalSteps]
     ) -> np.ndarray:
+        """
+        Get the data of all vector observations
+        :param step_result:
+        :return:
+        """
         result: List[np.ndarray] = []
         for obs in step_result.obs:
             if len(obs.shape) == 2:
@@ -335,24 +527,29 @@ class UnityToGymWrapper(gym.Env):
         return np.concatenate(result, axis=1)
 
     def _get_vec_obs_size(self) -> int:
+        """
+        Get all shapes of the vector observations
+        :return:
+        """
         result = 0
         for obs_spec in self.group_spec.observation_specs:
             if len(obs_spec.shape) == 1:
                 result += obs_spec.shape[0]
         return result
 
-    def render(self, mode="rgb_array"):
+    def render(self, mode="rgb_array") -> Tuple[Optional[np.ndarray], ...]:
         """
         Return the latest visual observations.
         Note that it will not render a new frame of the environment.
         """
-        return self.visual_obs
+        return self.rgb_obs, self.mask_obs, self.mixed_obs
 
     def close(self) -> None:
         """Override _close in your subclass to perform any necessary cleanup.
         Environments will automatically close() themselves when
         garbage collected or when the program exits.
         """
+        print(f'{self.done_reason_stat=}')
         self._env.close()
 
     def seed(self, seed: Any = None) -> None:
@@ -382,45 +579,49 @@ class UnityToGymWrapper(gym.Env):
         return self._action_space
 
     @property
-    def observation_space(self):
+    def observation_space(self) -> gym.Space:
         return self._observation_space
 
 
-class ActionFlattener:
-    """
-    Flattens branched discrete action spaces into single-branch discrete action spaces.
-    """
+if __name__ == '__main__':
+    # Play with safe riverine environment
+    from mlagents_envs.envs.env_utils import make_unity_env
+    from mlagents_envs.key2action import Key2Action
+    import matplotlib.pyplot as plt
 
-    def __init__(self, branched_action_space):
-        """
-        Initialize the flattener.
-        :param branched_action_space: A List containing the sizes of each branch of the action
-        space, e.g. [2,3,3] for three branches with size 2, 3, and 3 respectively.
-        """
-        self._action_shape = branched_action_space
-        self.action_lookup = self._create_lookup(self._action_shape)
-        self.action_space = spaces.Discrete(len(self.action_lookup))
+    # Params
+    env_path = '/home/edison/Research/unity-saferl-envs/medium_dr/riverine_medium_dr_env.x86_64'
 
-    @classmethod
-    def _create_lookup(self, branched_action_space):
-        """
-        Creates a Dict that maps discrete actions (scalars) to branched actions (lists).
-        Each key in the Dict maps to one unique set of branched actions, and each value
-        contains the List of branched actions.
-        """
-        possible_vals = [range(_num) for _num in branched_action_space]
-        all_actions = [list(_action) for _action in itertools.product(*possible_vals)]
-        # Dict should be faster than List for large action spaces
-        action_lookup = {
-            _scalar: _action for (_scalar, _action) in enumerate(all_actions)
-        }
-        return action_lookup
+    env = make_unity_env(env_path=env_path, max_idle_steps=50000)
+    obs = env.reset()
+    rgb, mask, mixed = env.render()
 
-    def lookup_action(self, action):
-        """
-        Convert a scalar discrete action into a unique set of branched actions.
-        :param action: A scalar value representing one of the discrete actions.
-        :returns: The List containing the branched actions.
-        """
-        return self.action_lookup[action]
+    k2a = Key2Action()  # Start a new thread
+
+    fig, ax = plt.subplots(1, 3)
+    rgb_canvas = ax[0].imshow(rgb)
+    mask_canvas = ax[1].imshow(mask)
+    mixed_canvas = ax[2].imshow(mixed)
+
+    i = 0
+    while i < 10000:
+        # get next action either manually or randomly
+        action = k2a.get_multi_discrete_action()  # no action if no keyboard input
+
+        obs, reward, cost, terminated, truncated, info = env.step(action)
+
+        if not np.all(np.array(action) == 1):
+            print(f'Action: {action}, reward: {reward:.2f}, cost: {cost:.2f}')
+
+        rgb, mask, mixed = env.render()
+
+        rgb_canvas.set_data(rgb)
+        mask_canvas.set_data(mask)
+        mixed_canvas.set_data(mixed)
+
+        plt.draw()
+        plt.pause(0.001)
+
+        if terminated or truncated:
+            env.reset()
 
