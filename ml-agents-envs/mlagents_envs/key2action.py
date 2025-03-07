@@ -10,8 +10,7 @@ class Key2Action:
 
     def on_press(self, key):
         try:
-            pass
-            # print('alphanumeric key {0} pressed'.format(key.char))
+            print('alphanumeric key {0} pressed'.format(key.char))
         except AttributeError:
             print('special key {0} pressed'.format(key))
 
@@ -20,11 +19,14 @@ class Key2Action:
         if key == keyboard.Key.esc:
             # Stop listener
             return False
-        self.last_key = key.char
+        if key == keyboard.Key.space:
+            self.last_key = 'space'
+        else:
+            self.last_key = key.char
 
     def get_multi_discrete_action(self):
         action = [1] * 4
-        if self.last_key is None:
+        if self.last_key is None or self.last_key == 'space':
             return action
 
         if self.last_key == 'w':
