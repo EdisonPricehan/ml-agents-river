@@ -7,11 +7,7 @@ import mlagents_envs
 VERSION = mlagents_envs.__version__
 EXPECTED_TAG = mlagents_envs.__release_tag__
 
-
-# Read the contents of README file for the long description.
 here = os.path.abspath(os.path.dirname(__file__))
-with open(os.path.join(here, "README.md"), encoding="utf-8") as f:
-    long_description = f.read()
 
 
 class VerifyVersionCommand(install):
@@ -34,26 +30,22 @@ class VerifyVersionCommand(install):
 
 
 setup(
-    name="safe_riverine_envs",
-    version="0.1.5",
-    description="A Unity-based vision-driven river following safe reinforcement learning environment, built upon mlagents_envs",
-    long_description=long_description,
-    long_description_content_type="text/markdown",
-    url="https://github.com/EdisonPricehan/ml-agents-river",
-    author="Zihan Wang",
-    author_email="wang5044@purdue.edu",
-    license="Apache License 2.0",
+    name="mlagents_envs",
+    version=VERSION,
+    description="Unity Machine Learning Agents Interface",
+    url="https://github.com/Unity-Technologies/ml-agents",
+    author="Unity Technologies",
+    author_email="ML-Agents@unity3d.com",
     classifiers=[
         "Intended Audience :: Developers",
         "Topic :: Scientific/Engineering :: Artificial Intelligence",
         "License :: OSI Approved :: Apache Software License",
-        "Programming Language :: Python :: 3",
-        # "Programming Language :: Python :: 3.8",
-        # "Programming Language :: Python :: 3.9",
-        # "Programming Language :: Python :: 3.10",
+        "Programming Language :: Python :: 3.8",
+        "Programming Language :: Python :: 3.9",
+        "Programming Language :: Python :: 3.10",
     ],
     packages=find_packages(
-        exclude=["*.tests", "*.tests.*", "tests.*", "tests", "colabs", "*.ipynb", ".idea"]
+        exclude=["*.tests", "*.tests.*", "tests.*", "tests", "colabs", "*.ipynb"]
     ),
     zip_safe=False,
     install_requires=[
@@ -62,12 +54,12 @@ setup(
         "Pillow>=4.2.1",
         "protobuf>=3.6,<3.20",
         "pyyaml>=3.1.0",
-        "gymnasium>=0.29.0",
+        "gym>=0.21.0",
         "pettingzoo==1.15.0",
-        "numpy>=1.21.2",
+        "numpy==1.21.2",
         "filelock>=3.4.0",
     ],
     python_requires=">=3.8.13,<=3.10.12",
     # TODO: Remove this once mypy stops having spurious setuptools issues.
-    # cmdclass={"verify": VerifyVersionCommand},  # type: ignore
+    cmdclass={"verify": VerifyVersionCommand},  # type: ignore
 )
