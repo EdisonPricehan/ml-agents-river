@@ -2,21 +2,21 @@
 <table>
   <tr>
     <td style="text-align: center;">
-      <img src="ml-agents-envs/images/unity-river-overview-min.png" width="300"><br>
+      <img src="ml-agents-envs/images/unity-river-overview-min.png" width="500"><br>
       <strong>Sand Island</strong>
     </td>
     <td style="text-align: center;">
-      <img src="ml-agents-envs/images/unity-feature-bridge-min.png" width="300"><br>
+      <img src="ml-agents-envs/images/unity-feature-bridge-min.png" width="500"><br>
       <strong>Bridge</strong>
     </td>
   </tr>
   <tr>
     <td style="text-align: center;">
-      <img src="ml-agents-envs/images/unity-feature-tributary-min.png" width="300"><br>
+      <img src="ml-agents-envs/images/unity-feature-tributary-min.png" width="500"><br>
       <strong>Tributary</strong>
     </td>
     <td style="text-align: center;">
-      <img src="ml-agents-envs/images/unity-feature-varying-widths-min.png" width="300"><br>
+      <img src="ml-agents-envs/images/unity-feature-varying-widths-min.png" width="500"><br>
       <strong>Varying widths & depths</strong>
     </td>
   </tr>
@@ -35,7 +35,7 @@ The environment is formulated as a **Partially Observable - Constrained Submodul
 </div>
 
 ## Observation Space
-The agent receives a tuple of **RGB image** and **binary water semantic mask** of the drone view. 
+The agent receives a tuple of **RGB image** and **binary water semantic mask** of the drone view, of shape **[128, 128, 3]** and **[128, 128, 4]** respectively. 
 You can further process the observation using either variational encoding or mask patchification to scale down to a lower dimension, depending on your task objective or preference.
 
 <div style="text-align: center;">
