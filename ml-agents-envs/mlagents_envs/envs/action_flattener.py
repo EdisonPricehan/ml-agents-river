@@ -1,5 +1,5 @@
 from gymnasium import spaces
-from typing import List, Dict, Tuple
+from typing import List, Dict, Tuple, Union
 import itertools
 
 
@@ -43,7 +43,7 @@ class ActionFlattener:
 
 
 class DroneActionFlattener:
-    def __init__(self, branched_action_space: List[int] | Tuple[int, ...]):
+    def __init__(self, branched_action_space: Union[List[int], Tuple[int, ...]]):
         """
         Flatten (Convert) the "multi-discrete" action to discrete action assuming:
         1. all action branches share the same "no operation" action
@@ -77,3 +77,4 @@ if __name__ == '__main__':
     for a in range(9):
         multi_discrete_action = flattener.lookup_action(a)
         print(f'Discrete action: {a}, multi-discrete action: {multi_discrete_action}')
+
