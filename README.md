@@ -57,7 +57,7 @@ This waypoint-based control abstracts the UAV’s low-level dynamics while allow
 
 ## Reward Function
 The agent is rewarded based on its progress in covering the river spline:
-- **+1** for each newly visited river segment.
+- **1** for each newly visited river segment.
 - **0** otherwise.
 
 This **submodular reward structure (non-Markovian)** incentivizes exploration of unvisited areas while discouraging redundant actions.
@@ -110,11 +110,11 @@ Success = 6
     </td>
     <td style="text-align: center;">
       <img src="ml-agents-envs/images/river-medium-ortho.png" width="400"><br>
-      <strong>medium</strong>
+      <strong>Medium</strong>
     </td>
     <td style="text-align: center;">
       <img src="ml-agents-envs/images/river-hard-ortho.png" width="400"><br>
-      <strong>hard</strong>
+      <strong>Hard</strong>
     </td>
   </tr>
 </table>
