@@ -35,7 +35,7 @@ class VerifyVersionCommand(install):
 
 setup(
     name="safe_riverine_envs",
-    version="0.1.5",
+    version="0.1.0",
     description="A Unity-based vision-driven river following safe reinforcement learning environment, built upon mlagents_envs",
     long_description=long_description,
     long_description_content_type="text/markdown",
@@ -53,7 +53,7 @@ setup(
         # "Programming Language :: Python :: 3.10",
     ],
     packages=find_packages(
-        exclude=["*.tests", "*.tests.*", "tests.*", "tests", "colabs", "*.ipynb", ".idea"]
+        exclude=["*.tests", "*.tests.*", "tests.*", "tests", "colabs", "*.ipynb", ".idea", "images"]
     ),
     zip_safe=False,
     install_requires=[
