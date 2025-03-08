@@ -552,7 +552,10 @@ class UnityToGymWrapper(gym.Env):
         Environments will automatically close() themselves when
         garbage collected or when the program exits.
         """
-        print(f'{self.done_reason_stat=}')
+        print('Done reason statistics: ')
+        for reason, count in self.done_reason_stat.items():
+            print(f'{DoneReason(reason).name}: {count}')
+
         self._env.close()
 
     def seed(self, seed: Any = None) -> None:
@@ -606,25 +609,27 @@ if __name__ == '__main__':
     mask_canvas = ax[1].imshow(mask)
     mixed_canvas = ax[2].imshow(mixed)
 
-    i = 0
-    while i < 10000:
-        # get next action either manually or randomly
-        action = k2a.get_multi_discrete_action()  # no action if no keyboard input
+    try:
+        i = 0
+        while i < 10000:
+            # get next action either manually or randomly
+            action = k2a.get_multi_discrete_action()  # no action if no keyboard input
 
-        obs, reward, cost, terminated, truncated, info = env.step(action)
+            obs, reward, cost, terminated, truncated, info = env.step(action)
 
-        if not np.all(np.array(action) == 1):
-            print(f'Action: {action}, reward: {reward:.2f}, cost: {cost:.2f}')
+            if not np.all(np.array(action) == 1):
+                print(f'Action: {action}, reward: {reward:.2f}, cost: {cost:.2f}')
 
-        rgb, mask, mixed = env.render()
+            rgb, mask, mixed = env.render()
 
-        rgb_canvas.set_data(rgb)
-        mask_canvas.set_data(mask)
-        mixed_canvas.set_data(mixed)
+            rgb_canvas.set_data(rgb)
+            mask_canvas.set_data(mask)
+            mixed_canvas.set_data(mixed)
 
-        plt.draw()
-        plt.pause(0.001)
+            plt.draw()
+            plt.pause(0.001)
 
-        if terminated or truncated:
-            env.reset()
-
+            if terminated or truncated:
+                env.reset()
+    except KeyboardInterrupt:
+        env.close()
