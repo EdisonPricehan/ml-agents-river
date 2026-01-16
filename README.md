@@ -176,8 +176,16 @@ if __name__ == '__main__':
 
 ```
 
-If you find our work useful in your research, please cite our paper:
+If you find our work useful in your work, please kindly cite our papers:
 ```
+@inproceedings{wang2024synergistic,
+  title={Synergistic Reinforcement and Imitation Learning for Vision-driven Autonomous Flight of UAV Along River},
+  author={Wang, Zihan and Li, Jianwen and Mahmoudian, Nina},
+  booktitle={2024 IEEE/RSJ International Conference on Intelligent Robots and Systems (IROS)},
+  pages={9976--9982},
+  year={2024},
+  organization={IEEE}
+}
 @article{wang2024vision,
   title={Vision-driven UAV River Following: Benchmarking with Safe Reinforcement Learning},
   author={Wang, Zihan and Mahmoudian, Nina},
